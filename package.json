@@ -1,0 +1,25 @@
+{
+  "name": "pi-workflow-executor",
+  "version": "1.0.0",
+  "description": "Transactional workflow executor and state-machine runner for Pi",
+  "keywords": [
+    "pi-package"
+  ],
+  "type": "module",
+  "main": "./index.ts",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

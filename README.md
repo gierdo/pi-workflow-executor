@@ -51,6 +51,20 @@ To bypass the dialog and set an explicit task slug upfront, use `--slug <name>`:
 /workflow interactive-planning --slug oauth2-auth design oauth2 authentication
 ```
 
+### Prompt-Driven Execution (`workflow_start` Tool)
+
+In addition to user slash-command invocation, agents can start or resume workflows autonomously in response to prompt requests via the `workflow_start` tool:
+
+```json
+{
+  "workflow": "feature-implementation",
+  "task": "prompted-workflow-execution",
+  "prompt": "Implement ability to start workflows from prompts"
+}
+```
+
+The tool resolves the definition, initializes or resumes the run in `.workflow/state.db`, syncs the markdown journal, and returns the orchestration instructions directly in the tool response for immediate execution without turn-injection collisions.
+
 ### Inspecting and Resuming Runs
 
 Run `/workflow` with no arguments (or `/workflow list`) to open the interactive selector:

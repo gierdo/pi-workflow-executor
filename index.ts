@@ -238,6 +238,75 @@ export default async function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: "workflow_start",
+    label: "Workflow Start",
+    description: "Start or resume a transactional workflow (e.g. bug-fix, feature-implementation, task-implementation).",
+    promptSnippet: "Start or resume a transactional workflow (e.g. bug-fix, feature-implementation, task-implementation).",
+    promptGuidelines: ["Use workflow_start when the user asks to start, run, or resume a workflow."],
+    parameters: Type.Object({
+      workflow: Type.String({ description: "Name of the workflow to run (e.g. bug-fix, feature-implementation)" }),
+      task: Type.Optional(Type.String({ description: "Optional kebab-case task slug or change name" })),
+      prompt: Type.Optional(Type.String({ description: "Optional user context or instructions" })),
+    }),
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const resolved = resolveWorkflow(params.workflow, process.cwd());
+      if (!resolved) {
+        return {
+          content: [{ type: "text", text: `Error: Workflow definition for '${params.workflow}' not found.` }],
+          details: { error: "workflow_def_not_found" },
+        };
+      }
+
+      const task = params.task ? slugify(params.task) : "main";
+      const runId = `${params.workflow}-${task}`;
+      const db = getDB();
+      const journalPath = getJournalPath(params.workflow, task);
+      let run = runner.getRun(db, runId);
+
+      if (run) {
+        if (run.status === "completed" || run.status === "aborted") {
+          return {
+            content: [{ type: "text", text: `Workflow '${run.workflow}' (${run.task}) has already finished with status '${run.status}'.` }],
+            details: { runId: run.id, status: run.status },
+          };
+        }
+        try {
+          run = runner.resumeWorkflowRun(db, parseYaml(resolved.rawYaml), resolved.rawYaml, runId);
+        } catch (err) {
+          return {
+            content: [{ type: "text", text: `Cannot resume workflow: ${(err as Error).message}` }],
+            details: { error: (err as Error).message },
+          };
+        }
+        if (run.pending_action) {
+          return {
+            content: [{ type: "text", text: `Unresolved external action requires user reconciliation. Run remains paused.` }],
+            details: { status: "pending_action", runId: run.id },
+          };
+        }
+        runner.syncMarkdownJournal(db, runId, journalPath);
+      } else {
+        const def = parseYaml(resolved.rawYaml);
+        try {
+          run = runner.startWorkflowRun(db, def, resolved.rawYaml, task, runId);
+        } catch (err) {
+          return {
+            content: [{ type: "text", text: `Failed to start workflow: ${(err as Error).message}` }],
+            details: { error: (err as Error).message },
+          };
+        }
+        runner.syncMarkdownJournal(db, runId, journalPath);
+      }
+
+      const promptText = buildWorkflowPrompt(run, resolved.path, params.prompt);
+      return {
+        content: [{ type: "text", text: promptText }],
+        details: { runId: run.id, workflow: run.workflow, task: run.task, state: run.current_state, revision: run.revision },
+      };
+    },
+  });
+
+  pi.registerTool({
     name: "workflow_transition",
     label: "Workflow Transition",
     description: "Submit a workflow state outcome to advance the workflow runner.",

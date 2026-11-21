@@ -424,6 +424,7 @@ states:
 | `inputs` | map | No | Input parameter definitions. `task` is always required. |
 | `artifacts` | map | No | Output and intermediate files keyed by identifier. |
 | `initial` | string | Yes | Identifier of the starting state (must match a key in `states`). |
+| `concurrency` | integer | No | Maximum concurrent child tasks or subagents (default: 3; must be >= 1). |
 | `states` | map | Yes | State definitions keyed by state identifier. |
 | `herdr` | map | No | Advisory multiplexer layout hints (`suggested_panes`). |
 
@@ -436,6 +437,7 @@ states:
 | `produces` | string[] | No | Artifact identifiers written during this state. |
 | `exit_gate` | string | No | Conditions that must hold before advancing. |
 | `terminal` | boolean | No | When `true`, marks the end of a run. Must not define transitions. |
+| `concurrency` | integer | No | State-level concurrency limit for fan-out execution (must be >= 1). |
 | `invoke` | object | No | Child workflow invocation: `{ workflow: string, inputs?: map, entry?: string }`. |
 | `subagent` | string / object | No | Named subagent (`reviewer`, `worker`, `scout`) or `{ agent: string, skills?: string, task?: string }`. |
 | `transitions` | object[] | Yes* | Outgoing transition rules (*required for all non-terminal states). |

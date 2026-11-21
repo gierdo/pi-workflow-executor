@@ -98,8 +98,26 @@ When all tasks in a batch complete:
    ```
 
 ### 7. Concurrency Ceilings
-- Workflow definitions support a `concurrency` ceiling attribute (defaults to 3).
+- Workflow definitions support a `concurrency` ceiling attribute at the workflow root or state level (defaults to 3; must be a positive integer >= 1).
 - User prompt instructions can override the concurrency ceiling for a given run (e.g., specifying concurrency of 2 or 5).
+
+Example in workflow YAML:
+```yaml
+name: feature-implementation
+version: 1
+concurrency: 3 # Workflow-wide default ceiling
+
+states:
+  implementation:
+    goal: "Implement planned tasks concurrently across isolated Herdr worktrees."
+    concurrency: 4 # State-specific override
+    invoke:
+      workflow: task-implementation
+    transitions:
+      - outcome: tasks_completed
+        to: integration
+```
+
 
 ### 8. Strict Safety Boundaries
 - All operations are strictly local.

@@ -229,6 +229,8 @@ When running inside a Herdr workspace (`HERDR_ENV=1`), approval gates emit `herd
 
 `pi-workflow-tui` provides a terminal dashboard to inspect runs, browse workflow definitions, visualize state machines with ASCII/Unicode graphs, and manage run records.
 
+![Pi Workflow TUI Terminal Dashboard](docs/images/pi-workflow-tui.png)
+
 ### Launching the Dashboard
 
 Run the binary directly if linked into your `PATH`:

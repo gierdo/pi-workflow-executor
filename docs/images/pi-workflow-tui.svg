@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1197 704" width="1197" height="704">
+  <defs>
+    <style>
+      text {
+        font-family: "JetBrainsMono Nerd Font", "JetBrains Mono", monospace;
+        font-size: 14px;
+      }
+    </style>
+  </defs>
+
+  <!-- Outer canvas -->
+  <rect width="100%" height="100%" fill="#010409"/>
+
+  <!-- Terminal window shadow background -->
+  <rect x="24" y="26" width="1157" height="664" rx="12" fill="#000000" opacity="0.6"/>
+
+  <!-- Terminal window container -->
+  <rect x="20" y="20" width="1157" height="664" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1.2"/>
+
+  <!-- Title bar -->
+  <path d="M 20,30 A 10,10 0 0,1 30,20 L 1167,20 A 10,10 0 0,1 1177,30 L 1177,60 L 20,60 Z" fill="#161b22"/>
+  <line x1="20" y1="60" x2="1177" y2="60" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Window controls -->
+  <circle cx="44" cy="40" r="6" fill="#ff5f56"/>
+  <circle cx="64" cy="40" r="6" fill="#ffbd2e"/>
+  <circle cx="84" cy="40" r="6" fill="#27c93f"/>
+
+  <!-- Window title -->
+  <text x="598.5" y="45" fill="#8b949e" font-size="13" font-weight="500" text-anchor="middle">pi-workflow-tui</text>
+
+  <!-- Terminal Content -->
+  <text x="44" y="91" xml:space="preserve"><tspan fill="#58a6ff">┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓</tspan></text>
+  <text x="44" y="112" xml:space="preserve"><tspan fill="#58a6ff">┃</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#58a6ff" font-weight="bold">PI WORKFLOW DASHBOARD</tspan><tspan fill="#c9d1d9">                                                                                          </tspan><tspan fill="#c9d1d9" opacity="0.65">Press 'q' to quit</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#58a6ff">┃</tspan></text>
+  <text x="44" y="133" xml:space="preserve"><tspan fill="#58a6ff">┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛</tspan></text>
+  <text x="44" y="154" xml:space="preserve"></text>
+  <text x="44" y="175" xml:space="preserve"><tspan fill="#8b949e">┌──────────────────────────────────────────────┐┌──────────────────────────────────────────────────────────────────────────────────┐</tspan></text>
+  <text x="44" y="196" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#39c5cf" font-weight="bold"> WORKFLOW RUNS </tspan><tspan fill="#c9d1d9">                        </tspan><tspan fill="#c9d1d9" opacity="0.65">[Tab]</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#58a6ff" font-weight="bold">Workflow: interactive-planning [oauth2-auth]</tspan><tspan fill="#c9d1d9">                                     </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="217" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#c9d1d9" opacity="0.65">Status: [ACTIVE] | State: requirements | Rev: 5 | Updated: 2025-05-18 10:14:22</tspan><tspan fill="#c9d1d9">   </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="238" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#39c5cf" font-weight="bold">&gt;</tspan><tspan fill="#e3b341" font-weight="bold">[ACTIVE]</tspan><tspan fill="#c9d1d9" font-weight="bold"> </tspan><tspan fill="#f0f6fc" font-weight="bold" text-decoration="underline">interactive-planning (oauth2-auth)</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#e3b341">[Viewing lines 1-20 of 99 | PageUp/PageDown or [] to scroll]</tspan><tspan fill="#c9d1d9">                     </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="259" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">   </tspan><tspan fill="#39c5cf">[PAUSED]</tspan><tspan fill="#c9d1d9"> bug-fix (conn-pool-leak)          </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9">                                                                                  </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="280" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">  </tspan><tspan fill="#3fb950">[COMPLETED]</tspan><tspan fill="#c9d1d9"> feature-implementation (dark-m… </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> ╭───────────────┴──────────────╮                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="301" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">  </tspan><tspan fill="#3fb950">[COMPLETED]</tspan><tspan fill="#c9d1d9"> code-reconnaissance (auth-audi… </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> │ ✓ investigate                │                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="322" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">   </tspan><tspan fill="#f85149">[ABORTED]</tspan><tspan fill="#c9d1d9"> refactoring (legacy-parser)      </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> │ Orient quickly: tech stac... │                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="343" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> ╰───────────────┬──────────────╯                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="364" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9">                 │   ╭── [openspec_detected]                                      </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="385" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9">                 │   │                                                            </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="406" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9">                 │   ╰──► handoff                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="427" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9">                 │                                                                </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="448" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9">                 │ [oriented]                                                     </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="469" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9">                 ▼                                                                </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="490" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> ╭───────────────┴──────────────╮                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="511" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> │ ✓ clarify_intent             │                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="532" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> │ Reverse-engineer the requ... │                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="553" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9">                                              </tspan><tspan fill="#8b949e">││</tspan><tspan fill="#c9d1d9"> ╰───────────────┬──────────────╯                                                 </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="574" xml:space="preserve"><tspan fill="#8b949e">└──────────────────────────────────────────────┘└──────────────────────────────────────────────────────────────────────────────────┘</tspan></text>
+  <text x="44" y="595" xml:space="preserve"></text>
+  <text x="44" y="616" xml:space="preserve"><tspan fill="#8b949e">┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐</tspan></text>
+  <text x="44" y="637" xml:space="preserve"><tspan fill="#8b949e">│</tspan><tspan fill="#c9d1d9"> </tspan><tspan fill="#c9d1d9" opacity="0.65">[↑/↓/k/j] Navigate   [PageUp/PageDown/[] Scroll Graph   [Tab] Switch Tab   [d] Delete Run   [r] Refresh   [q] Quit</tspan><tspan fill="#c9d1d9">               </tspan><tspan fill="#8b949e">│</tspan></text>
+  <text x="44" y="658" xml:space="preserve"><tspan fill="#8b949e">└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</tspan></text>
+</svg>

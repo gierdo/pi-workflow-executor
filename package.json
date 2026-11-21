@@ -13,13 +13,22 @@
     ]
   },
   "scripts": {
-    "test": "node --test --experimental-strip-types test/*.test.ts"
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "tui": "node --experimental-strip-types ./bin/tui.ts"
+  },
+  "bin": {
+    "pi-workflow-tui": "./bin/tui.ts"
   },
   "dependencies": {
+    "ink": "^8.0.0",
+    "react": "^19.3.1",
     "yaml": "^2.6.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0"
   }
 }

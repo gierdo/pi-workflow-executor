@@ -103,6 +103,97 @@ Reason: plan approved; break it into worker-ready tasks
 
 ---
 
+## Workflow Management TUI
+
+A dedicated full-screen terminal dashboard for inspecting defined workflows and recorded workflow runs, visualizing state machines with ASCII/Unicode state graphs, and safely managing terminated runs.
+
+### Installing into PATH
+
+To run `pi-workflow-tui` from any terminal session without needing `npx` or local repository paths, install it globally or link it into your `PATH`:
+
+#### Option 1: Global Link (Recommended)
+
+From the `pi-workflow-executor` repository root:
+
+```bash
+pnpm link --global
+# or with npm:
+npm link
+```
+
+This creates a symlink in your global npm/pnpm bin directory, making `pi-workflow-tui` immediately accessible system-wide.
+
+#### Option 2: Symlink to `~/.local/bin`
+
+Alternatively, create a direct symlink to the executable in `~/.local/bin`:
+
+```bash
+mkdir -p ~/.local/bin
+ln -sf "$(pwd)/bin/tui.ts" ~/.local/bin/pi-workflow-tui
+```
+
+Make sure `~/.local/bin` is in your `PATH` (e.g. add `export PATH="$HOME/.local/bin:$PATH"` to your `~/.bashrc` or `~/.zshrc` if it isn't already).
+
+#### Option 3: Global Install via npm
+
+Install globally from the repository directory or directly from GitHub:
+
+```bash
+npm install -g .
+# or directly from git:
+npm install -g git:github.com/gierdo/pi-workflow-executor
+```
+
+---
+
+### Launching the TUI
+
+Once installed into your `PATH`, simply run:
+
+```bash
+pi-workflow-tui
+```
+
+You can also run it via npm script in this repository:
+
+```bash
+pnpm tui
+```
+
+Or on demand via npx:
+
+```bash
+npx pi-workflow-tui
+```
+
+### Dashboard Features
+
+- **Split-Pane Interface**: The left sidebar lists recorded workflow runs or available workflow templates. The right pane displays a dynamic ASCII/Unicode state graph with depth-layered nodes (`╭───╮`, `│   │`, `╰───╯`) and directed transition arrows (`──►`).
+- **Live State Inspection**: For recorded runs, visited states are flagged with `✓`, and the current state is highlighted with `► [CURRENT]`.
+- **Template Browser**: Press `Tab` to switch to defined templates (project-local, global, or bundled) and visualize their static state topologies.
+- **Safe Run Deletion**: Select any `[COMPLETED]` or `[ABORTED]` run and press `d` to open a deletion confirmation modal. Confirming with `y` transactionally deletes the run and child foreign-key records from SQLite and cleans up `.workflow/runs/{workflow}/{task}` on disk.
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| `Up` / `Down` or `k` / `j` | Navigate items in the list |
+| `PageUp` / `PageDown` or `[` / `]` | Scroll graph view vertically |
+| `Tab` | Toggle between Workflow Runs and Workflow Templates |
+| `d` | Delete selected completed or aborted run |
+| `y` / `n` | Confirm (`y`) or cancel (`n`) run deletion in modal |
+| `Esc` | Cancel deletion modal or dismiss status notices |
+| `r` | Refresh runs and workflow definitions from disk/database |
+| `q` | Exit the dashboard and restore normal terminal screen |
+
+### Deletion Safety Caveats
+
+- **Active and Paused Runs Protected**: Runs currently in `active` or `paused` state cannot be deleted. Complete or abort them before deleting.
+- **Transactional Foreign Key Cascade**: Database deletion runs inside an immediate transaction cascading through all child tables (`external_actions`, `loop_counts`, `invocations`, `pending_approvals`, `transitions`, `state_visits`, `runs`) to ensure zero orphaned rows.
+
+
+---
+
 ## Shipped Workflows
 
 The package bundles 8 standard workflows:
@@ -321,6 +412,10 @@ All tests run using Node's built-in test runner (`node:test` and `node:assert/st
 
 - `test/engine.test.ts`: State machine transitions, revision increments, loop limits.
 - `test/db.test.ts`: SQLite schema initialization, WAL mode, optimistic locking.
+- `test/delete-run.test.ts`: Cascade database deletion and status guard enforcement.
+- `test/graph-layout.test.ts`: Topological layer ordering, cycle handling, and ASCII/Unicode box-arrow rendering.
+- `test/actions.test.ts`: Workflow run deletion and journal filesystem cleanup.
+- `test/tui-components.test.ts`: Ink component rendering, status badges, fallbacks, and confirm modal.
 - `test/resolver.test.ts`: Multi-tier resolution hierarchy and config loading.
 - `test/slug.test.ts`: Prompt normalization and argument parsing.
 - `test/scenarios.test.ts`: End-to-end execution of all 8 standard workflows.

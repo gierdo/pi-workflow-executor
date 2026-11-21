@@ -5,8 +5,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as runner from "./runner/index.ts";
 import { resolveWorkflow, listWorkflows } from "./resolver.ts";
 import { slugify, parseWorkflowInvocation } from "./slug.ts";
+import { isHerdrActive, notifyHerdr, withHerdrBlocked } from "./herdr.ts";
 
-export { slugify, parseWorkflowInvocation };
+export { slugify, parseWorkflowInvocation, isHerdrActive, notifyHerdr, withHerdrBlocked };
 
 const require = createRequire(import.meta.url);
 const homeDir = process.env.HOME || "";
@@ -151,7 +152,15 @@ export default async function (pi: ExtensionAPI) {
       return `${badge} ${r.workflow} (${r.task}) - state: ${r.current_state}, rev: ${r.revision}${pauseInfo}`;
     });
 
-    const choice = await ctx.ui.select("Select a workflow run to inspect or resume:", options);
+    const choice = await withHerdrBlocked(
+      pi.events,
+      "Select workflow run",
+      {
+        title: "Select workflow run",
+        body: "Select a workflow run to inspect or resume",
+      },
+      () => ctx.ui.select("Select a workflow run to inspect or resume:", options)
+    );
     if (!choice) return;
 
     const selectedIndex = options.indexOf(choice);
@@ -183,7 +192,7 @@ export default async function (pi: ExtensionAPI) {
         return;
       }
 
-      const parsed = await parseWorkflowInvocation(args, ctx);
+      const parsed = await parseWorkflowInvocation(args, ctx, pi.events);
       if (!parsed) {
         await showWorkflowsInterface(ctx);
         return;
@@ -358,7 +367,15 @@ export default async function (pi: ExtensionAPI) {
             `Chat about it (ask question or discuss)`,
           ];
 
-          const choice = await ctx.ui.select(prompt, options);
+          const choice = await withHerdrBlocked(
+            pi.events,
+            `Workflow approval: ${run.workflow} -> ${result.gate}`,
+            {
+              title: "Workflow approval required",
+              body: `Workflow '${run.workflow}' (${run.task}) requires approval to transition to '${result.gate}'.`,
+            },
+            () => ctx.ui.select(prompt, options)
+          );
 
           if (choice === options[0]) {
             // Option 1: Approved
@@ -373,9 +390,18 @@ export default async function (pi: ExtensionAPI) {
             };
           } else if (choice === options[2]) {
             // Option 3: Chat about it
-            const userPrompt = await ctx.ui.input(
-              "Ask a question or provide feedback before deciding:",
-              "What would you like to know or adjust before approving?"
+            const userPrompt = await withHerdrBlocked(
+              pi.events,
+              `Workflow discussion: ${run.workflow} -> ${result.gate}`,
+              {
+                title: "Workflow approval discussion",
+                body: `Provide feedback or ask questions before deciding on approval for '${result.gate}'.`,
+              },
+              () =>
+                ctx.ui.input(
+                  "Ask a question or provide feedback before deciding:",
+                  "What would you like to know or adjust before approving?"
+                )
             );
 
             if (userPrompt && userPrompt.trim()) {

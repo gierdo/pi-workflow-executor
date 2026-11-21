@@ -1,3 +1,5 @@
+import { withHerdrBlocked } from "./herdr.ts";
+
 /**
  * Simple, dictionary-free slugifier.
  * Converts raw prompt into a clean kebab-case identifier (max 4 words).
@@ -23,7 +25,8 @@ export interface ParsedWorkflowInvocation {
 
 export async function parseWorkflowInvocation(
   rawArgs: string,
-  ctx: any
+  ctx: any,
+  events?: any
 ): Promise<ParsedWorkflowInvocation | null> {
   let trimmed = rawArgs.trim();
   if (!trimmed) return null;
@@ -59,7 +62,15 @@ export async function parseWorkflowInvocation(
         prompt: promptText,
         value: task,
       });
-      const confirmed = await ctx.ui.input(promptArg, task);
+      const confirmed = await withHerdrBlocked(
+        events,
+        "Confirm workflow task slug",
+        {
+          title: "Confirm workflow task slug",
+          body: `Confirm or customize task slug for workflow '${name}'`,
+        },
+        () => ctx.ui.input(promptArg, task)
+      );
       const val = typeof confirmed === "string" ? confirmed : confirmed?.value;
       if (val && typeof val === "string" && val.trim()) {
         task = val.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");

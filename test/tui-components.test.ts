@@ -8,8 +8,12 @@ import { ConfirmModal } from "../tui/components/ConfirmModal.ts";
 import { App } from "../tui/app.ts";
 import type { RunRecord, StateVisitRecord, WorkflowDefinition } from "../runner/types.ts";
 
+function stripAnsi(str: string): string {
+  return str.replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
+}
+
 function clean(str: string): string {
-  return str.replace(/[│┌┐└┘─┏┓┗┛┃━]/g, " ").replace(/\s+/g, " ").trim();
+  return stripAnsi(str).replace(/[│┌┐└┘─┏┓┗┛┃━]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 test("RunList renders items with status badges and cursor", () => {

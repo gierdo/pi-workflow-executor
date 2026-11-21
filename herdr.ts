@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 
 export interface HerdrNotification {
   title: string;
@@ -7,6 +7,7 @@ export interface HerdrNotification {
 
 export const herdrOps = {
   spawn,
+  execSync,
 };
 
 /**
@@ -60,3 +61,36 @@ export async function withHerdrBlocked<T>(
     events.emit("herdr:blocked", { active: false });
   }
 }
+
+/**
+ * Creates a Git worktree via Herdr CLI.
+ * Only allowed when running inside Herdr (HERDR_ENV=1).
+ */
+export function createHerdrWorktree(params: {
+  cwd: string;
+  branch: string;
+  label: string;
+}): { worktreePath: string; workspaceId?: string } {
+  if (!isHerdrActive()) {
+    throw new Error("Cannot create Herdr worktree outside a Herdr environment (HERDR_ENV!=1)");
+  }
+  const output = herdrOps.execSync(
+    `herdr worktree create --cwd "${params.cwd}" --branch "${params.branch}" --label "${params.label}" --no-focus`,
+    { encoding: "utf8" }
+  );
+  const parsed = JSON.parse(output.toString());
+  return {
+    worktreePath: parsed.result?.worktree?.path ?? parsed.worktree?.path ?? "",
+    workspaceId: parsed.result?.workspace?.id ?? parsed.workspace?.id,
+  };
+}
+
+/**
+ * Removes a Herdr worktree workspace by ID.
+ * Silently ignores removal if outside Herdr.
+ */
+export function removeHerdrWorktree(workspaceId: string): void {
+  if (!isHerdrActive()) return;
+  herdrOps.execSync(`herdr worktree remove --workspace "${workspaceId}" --force`, { stdio: "ignore" });
+}
+

@@ -165,3 +165,37 @@ test("validateDefinition rejects invalid subagent declaration", () => {
   assert.equal(resMissing.valid, false);
   assert.ok(resMissing.errors.some(e => e.includes("missing required 'agent' name")));
 });
+
+test("validateDefinition accepts valid concurrency and rejects invalid concurrency (ISC 13)", () => {
+  const validDef: WorkflowDefinition = {
+    name: "concurrency-valid",
+    concurrency: 3,
+    initial: "s1",
+    states: {
+      s1: {
+        concurrency: 2,
+        transitions: [{ to: "done" }]
+      },
+      done: { terminal: true }
+    }
+  };
+  assert.equal(validateDefinition(validDef).valid, true);
+
+  const invalidDef: WorkflowDefinition = {
+    name: "concurrency-invalid",
+    concurrency: 0,
+    initial: "s1",
+    states: {
+      s1: {
+        concurrency: -1,
+        transitions: [{ to: "done" }]
+      },
+      done: { terminal: true }
+    }
+  };
+  const res = validateDefinition(invalidDef);
+  assert.equal(res.valid, false);
+  assert.ok(res.errors.some(e => e.includes("Workflow 'concurrency' must be an integer >= 1")));
+  assert.ok(res.errors.some(e => e.includes("State 's1' 'concurrency' must be an integer >= 1")));
+});
+

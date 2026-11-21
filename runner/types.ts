@@ -39,6 +39,7 @@ export interface StateDefinition {
   invoke?: ChildInvocationDefinition;
   subagent?: string | SubagentDefinition;
   transitions?: TransitionDefinition[];
+  concurrency?: number;
 }
 
 export interface WorkflowDefinition {
@@ -50,6 +51,7 @@ export interface WorkflowDefinition {
   initial: string;
   states: Record<string, StateDefinition>;
   herdr?: unknown;
+  concurrency?: number;
 }
 
 export interface ValidationResult {
@@ -94,4 +96,19 @@ export interface TransitionResult {
   gate?: string;
   reason?: string;
   revision?: number;
+}
+
+export interface InvocationRecord {
+  id: number;
+  parent_run_id: string;
+  invocation_id: string;
+  child_workflow: string;
+  entry_override?: string;
+  task_slug?: string;
+  child_run_id?: string;
+  worktree?: string;
+  branch?: string;
+  status: "active" | "completed" | "aborted";
+  created_at: string;
+  finished_at?: string;
 }

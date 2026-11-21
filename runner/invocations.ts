@@ -1,15 +1,15 @@
 import type { DatabaseSync } from "node:sqlite";
 import { pauseRun, getRun } from "./db.ts";
+import type { InvocationRecord } from "./types.ts";
 
-export interface InvocationRecord {
-  id: number;
-  parent_run_id: string;
-  invocation_id: string;
-  child_workflow: string;
-  entry_override?: string;
-  status: "active" | "completed" | "aborted";
-  created_at: string;
-  finished_at?: string;
+export type { InvocationRecord };
+
+export interface CreateInvocationOptions {
+  taskSlug?: string;
+  childRunId?: string;
+  worktree?: string;
+  branch?: string;
+  entryOverride?: string;
 }
 
 export function getLoopCount(db: DatabaseSync, runId: string, transitionId: string): number {
@@ -57,15 +57,47 @@ export function createChildInvocation(
   db: DatabaseSync,
   parentRunId: string,
   childWorkflow: string,
-  entryOverride?: string
+  entryOverrideOrOptions?: string | CreateInvocationOptions
 ): InvocationRecord {
+  const options: CreateInvocationOptions =
+    typeof entryOverrideOrOptions === "string"
+      ? { entryOverride: entryOverrideOrOptions }
+      : entryOverrideOrOptions ?? {};
+
   const invocationId = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   db.prepare(`
-    INSERT INTO invocations (parent_run_id, invocation_id, child_workflow, entry_override, status)
-    VALUES (?, ?, ?, ?, 'active')
-  `).run(parentRunId, invocationId, childWorkflow, entryOverride ?? null);
+    INSERT INTO invocations (
+      parent_run_id,
+      invocation_id,
+      child_workflow,
+      entry_override,
+      task_slug,
+      child_run_id,
+      worktree,
+      branch,
+      status
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
+  `).run(
+    parentRunId,
+    invocationId,
+    childWorkflow,
+    options.entryOverride ?? null,
+    options.taskSlug ?? null,
+    options.childRunId ?? null,
+    options.worktree ?? null,
+    options.branch ?? null
+  );
 
   return db.prepare("SELECT * FROM invocations WHERE invocation_id = ?").get(invocationId) as InvocationRecord;
+}
+
+export function getActiveInvocations(db: DatabaseSync, parentRunId: string): InvocationRecord[] {
+  return db.prepare(`
+    SELECT * FROM invocations
+    WHERE parent_run_id = ? AND status = 'active'
+    ORDER BY id ASC
+  `).all(parentRunId) as InvocationRecord[];
 }
 
 export function getActiveInvocation(db: DatabaseSync, parentRunId: string): InvocationRecord | null {
@@ -75,6 +107,28 @@ export function getActiveInvocation(db: DatabaseSync, parentRunId: string): Invo
     ORDER BY id DESC LIMIT 1
   `).get(parentRunId) as InvocationRecord | undefined;
   return row ?? null;
+}
+
+export function getInvocationByTask(db: DatabaseSync, parentRunId: string, taskSlug: string): InvocationRecord | null {
+  const row = db.prepare(`
+    SELECT * FROM invocations
+    WHERE parent_run_id = ? AND task_slug = ?
+    ORDER BY id DESC LIMIT 1
+  `).get(parentRunId, taskSlug) as InvocationRecord | undefined;
+  return row ?? null;
+}
+
+export function completeInvocationByTask(
+  db: DatabaseSync,
+  parentRunId: string,
+  taskSlug: string,
+  outcome: "completed" | "aborted"
+): void {
+  db.prepare(`
+    UPDATE invocations
+    SET status = ?, finished_at = datetime('now')
+    WHERE parent_run_id = ? AND task_slug = ? AND status = 'active'
+  `).run(outcome, parentRunId, taskSlug);
 }
 
 export function completeChildInvocation(

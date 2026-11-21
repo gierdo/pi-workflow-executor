@@ -132,8 +132,28 @@ states:
         reason: "cannot verify: surface the blocker rather than assume done"
       - outcome: verified
         when: "exit_gate holds"
+        to: task_review
+        reason: "the task is implemented and proven; proceed to in-worktree review"
+
+  task_review:
+    goal: >-
+      Perform behavioral code review on this task diff within the isolated
+      worktree. Check that the code matches the plan, meets quality and
+      correctness criteria, and introduces no defects or security risks.
+    subagent: reviewer
+    exit_gate: >-
+      The code meets quality and correctness criteria with no unaddressed
+      defects.
+    transitions:
+      - outcome: review_defects_found
+        when: "Reviewer flags code quality, security, or correctness issues"
+        to: implement
+        reason: "remediation: fix review defects within task worktree"
+        max_retries: 2
+      - outcome: review_passed
+        when: "exit_gate holds"
         to: report
-        reason: "the task is implemented and proven"
+        reason: "review passed: proceed to final report"
 
   report:
     goal: >-

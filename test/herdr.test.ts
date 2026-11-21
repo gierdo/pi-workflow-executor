@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { isHerdrActive, notifyHerdr, withHerdrBlocked, herdrOps } from "../herdr.ts";
+import { isHerdrActive, notifyHerdr, withHerdrBlocked, createHerdrWorktree, removeHerdrWorktree, herdrOps } from "../herdr.ts";
 
 test("isHerdrActive returns true only when HERDR_ENV is '1'", () => {
   const origEnv = process.env.HERDR_ENV;
@@ -237,3 +237,118 @@ test("withHerdrBlocked triggers notifyHerdr when notification is provided", asyn
     }
   }
 });
+
+test("createHerdrWorktree throws when HERDR_ENV is not '1'", () => {
+  const origEnv = process.env.HERDR_ENV;
+  delete process.env.HERDR_ENV;
+
+  try {
+    assert.throws(
+      () => {
+        createHerdrWorktree({
+          cwd: "/path/to/repo",
+          branch: "feat/foo/task-1",
+          label: "task-1",
+        });
+      },
+      { message: "Cannot create Herdr worktree outside a Herdr environment (HERDR_ENV!=1)" }
+    );
+  } finally {
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+
+test("createHerdrWorktree executes CLI command and parses output when HERDR_ENV is '1'", () => {
+  const origEnv = process.env.HERDR_ENV;
+  process.env.HERDR_ENV = "1";
+
+  const origExecSync = herdrOps.execSync;
+  let executedCmd = "";
+
+  try {
+    herdrOps.execSync = ((cmd: string, options: any) => {
+      executedCmd = cmd;
+      return JSON.stringify({
+        result: {
+          worktree: { path: "/tmp/worktrees/feat/foo/task-1" },
+          workspace: { id: "ws_12345" },
+        },
+      });
+    }) as any;
+
+    const res = createHerdrWorktree({
+      cwd: "/path/to/repo",
+      branch: "feat/foo/task-1",
+      label: "task-1",
+    });
+
+    assert.equal(
+      executedCmd,
+      'herdr worktree create --cwd "/path/to/repo" --branch "feat/foo/task-1" --label "task-1" --no-focus'
+    );
+    assert.equal(res.worktreePath, "/tmp/worktrees/feat/foo/task-1");
+    assert.equal(res.workspaceId, "ws_12345");
+  } finally {
+    herdrOps.execSync = origExecSync;
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+
+test("removeHerdrWorktree executes remove command when HERDR_ENV is '1'", () => {
+  const origEnv = process.env.HERDR_ENV;
+  process.env.HERDR_ENV = "1";
+
+  const origExecSync = herdrOps.execSync;
+  let executedCmd = "";
+
+  try {
+    herdrOps.execSync = ((cmd: string) => {
+      executedCmd = cmd;
+      return "";
+    }) as any;
+
+    removeHerdrWorktree("ws_12345");
+    assert.equal(executedCmd, 'herdr worktree remove --workspace "ws_12345" --force');
+  } finally {
+    herdrOps.execSync = origExecSync;
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+
+test("removeHerdrWorktree is a no-op when HERDR_ENV is not '1'", () => {
+  const origEnv = process.env.HERDR_ENV;
+  delete process.env.HERDR_ENV;
+
+  const origExecSync = herdrOps.execSync;
+  let called = false;
+
+  try {
+    herdrOps.execSync = (() => {
+      called = true;
+      return "";
+    }) as any;
+
+    removeHerdrWorktree("ws_12345");
+    assert.equal(called, false);
+  } finally {
+    herdrOps.execSync = origExecSync;
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+

@@ -37,6 +37,7 @@ export function initDatabase(dbPath: string): DatabaseSync {
   }
 
   const db = new DatabaseSync(dbPath);
+  db.exec("PRAGMA busy_timeout = 5000;");
   db.exec("PRAGMA foreign_keys = ON;");
   if (dbPath !== ":memory:") {
     db.exec("PRAGMA journal_mode = WAL;");
@@ -94,6 +95,10 @@ export function initDatabase(dbPath: string): DatabaseSync {
       invocation_id TEXT NOT NULL UNIQUE,
       child_workflow TEXT NOT NULL,
       entry_override TEXT,
+      task_slug TEXT,
+      child_run_id TEXT,
+      worktree TEXT,
+      branch TEXT,
       status TEXT NOT NULL DEFAULT 'active', -- 'active', 'completed', 'aborted'
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       finished_at TEXT
@@ -118,6 +123,21 @@ export function initDatabase(dbPath: string): DatabaseSync {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  const cols = db.prepare("PRAGMA table_info(invocations)").all() as Array<{ name: string }>;
+  const colNames = new Set(cols.map((c) => c.name));
+  if (!colNames.has("task_slug")) {
+    db.exec("ALTER TABLE invocations ADD COLUMN task_slug TEXT;");
+  }
+  if (!colNames.has("child_run_id")) {
+    db.exec("ALTER TABLE invocations ADD COLUMN child_run_id TEXT;");
+  }
+  if (!colNames.has("worktree")) {
+    db.exec("ALTER TABLE invocations ADD COLUMN worktree TEXT;");
+  }
+  if (!colNames.has("branch")) {
+    db.exec("ALTER TABLE invocations ADD COLUMN branch TEXT;");
+  }
 
   return db;
 }

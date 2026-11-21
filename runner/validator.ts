@@ -23,6 +23,10 @@ export function validateDefinition(def: WorkflowDefinition): ValidationResult {
 
   const stateIds = new Set(Object.keys(def.states));
 
+  if (def.concurrency !== undefined && (!Number.isInteger(def.concurrency) || def.concurrency < 1)) {
+    errors.push(`Workflow 'concurrency' must be an integer >= 1`);
+  }
+
   if (!def.initial || typeof def.initial !== "string") {
     errors.push("Workflow must declare an 'initial' state name");
   } else if (!stateIds.has(def.initial)) {
@@ -68,6 +72,10 @@ export function validateDefinition(def: WorkflowDefinition): ValidationResult {
     }
 
     // Non-terminal state must have transitions
+    if (state.concurrency !== undefined && (!Number.isInteger(state.concurrency) || state.concurrency < 1)) {
+      errors.push(`State '${stateId}' 'concurrency' must be an integer >= 1`);
+    }
+
     if (!state.transitions || !Array.isArray(state.transitions) || state.transitions.length === 0) {
       errors.push(`Non-terminal state '${stateId}' has no transitions defined`);
       continue;

@@ -1,5 +1,6 @@
 name: feature-implementation
 version: 4
+concurrency: 3
 description: >-
   Drive a feature from orientation through integration, with OpenSpec as the
   system of record for planning and tasks: explore (optional) -> propose ->
@@ -88,25 +89,29 @@ states:
   implementation:
     invoke:
       workflow: task-implementation
+    concurrency: 3
     goal: >-
       Execute implementation of the planned tasks via the task-implementation
-      sub-workflow. The child workflow's worker runs quality intake, implements
-      tasks in order, verifies code checks, and records implementation evidence.
-      If the child reports a blocked condition (infeasible, under-specified, or
-      unresolvable checks), hand off to planning_revision.
+      sub-workflow. In Herdr environments (HERDR_ENV=1), tasks execute
+      concurrently in staged batches (up to concurrency ceiling, default 3)
+      within isolated Git worktrees ({base-branch}/{task-slug}). Outside Herdr,
+      tasks run sequentially. Worker subagents run quality intake, implement
+      changes, verify tests, and undergo in-worktree review before reporting
+      done. Task worktrees are retained across the batch. If any child reports
+      blocked, hand off to planning_revision.
     consumes: [proposal, specs_delta, design, tasks]
     produces: [tasks]
-    exit_gate: "The child ended in `done`: all tasks implemented and verified with evidence."
+    exit_gate: "All batch tasks completed in `done`: implemented, verified, reviewed in-worktree, with evidence."
     transitions:
       - outcome: implementation_blocked
-        when: "The child ended in `blocked`: task infeasible, under-specified, or verification failed."
+        when: "A child ended in `blocked`: task infeasible, under-specified, or verification failed."
         to: planning_revision
         reason: "refinement: task implementation blocked; revise plan or specs"
         max_retries: 2
       - outcome: implemented
         when: "exit_gate holds"
         to: verification
-        reason: "all tasks implemented with checks"
+        reason: "all tasks implemented with checks and in-worktree review"
 
   planning_revision:
     goal: >-
@@ -175,17 +180,23 @@ states:
 
   integration:
     goal: >-
-      Land the work per the repository's conventions and archive the change
-      (`openspec-archive-change`). The review.md archives with it; record its archived path in the journal.
+      Acts as the integration barrier for worktree tasks and lands the change:
+      1. When running with parallel worktrees, sequentially merges task
+      branches ({base-branch}/{task-slug}) into the base branch without
+      remote pushes. If merge conflicts occur, aborts merge and returns to the
+      task worktree for resolution.
+      2. Runs final integration verification across merged code.
+      3. Cleans up task worktrees via `herdr worktree remove`.
+      4. Lands the work per repo conventions and archives the change
+      (`openspec-archive-change`).
     consumes: [proposal, specs_delta]
     exit_gate: >-
-      Committed (and PR opened if that is the flow), docs/changelog updated if
-      kept, no stray temporary artifacts, change synced and archived (or the
-      user explicitly deferred it). Holds vacuously if the user opted out of
-      integration.
+      Merged into base branch, full integration verified, task worktrees
+      cleaned up, committed, docs updated, change synced and archived (or user
+      deferred it).
     transitions:
       - outcome: integration_defect
-        when: "Landing surfaced a problem needing a code change."
+        when: "Landing or merging surfaced a problem needing a code change."
         to: implementation
         reason: "integration surfaced a defect; fix then re-verify"
         max_retries: 2

@@ -81,6 +81,17 @@ function buildWorkflowPrompt(run: any, workflowPath: string, instructions?: stri
     "5. **Sub-workflows**: When a state defines `invoke:`, run the child workflow. Upon reaching a terminal state, match the child outcome to the parent's transitions and call `workflow_transition`.",
     "6. **OpenSpec Conventions**: If the workflow integrates with OpenSpec (`bug-fix`, `feature-implementation`), `{task}` is the change name. Drive dedicated `openspec-*` skills and resolve paths using `openspec status --change \"${run.task}\" --json`.",
     "7. **Terminal State**: When reaching a state with `terminal: true`, the workflow is complete. Report final results and output artifact locations.",
+    "8. **Parallel Execution & Herdr Worktrees**:",
+    "   - Parallel execution is ONLY permitted when HERDR_ENV=1. If not running in Herdr, execute tasks sequentially in the main workspace.",
+    "   - For parallel batches (concurrency ceiling default: 3, overridable by user prompt):",
+    "     a. Propose a base branch name with an appropriate prefix based on workflow kind (feat/, fix/, perf/, refactor/) and confirm {prefix}/{workflow-slug} with the user.",
+    "     b. Serially provision worktrees using herdr worktree create with branch {base-branch}/{task-slug}.",
+    "     c. Launch worker subagents in parallel with cwd pointing to their respective worktrees and distinct child runIds.",
+    "     d. Each child executes task-implementation including in-worktree review.",
+    "     e. Retain worktrees until integration verification succeeds.",
+    "     f. In the integration state, sequentially merge task branches into {base-branch}.",
+    "     g. Upon successful verification, clean up worktrees via herdr worktree remove.",
+    "   - Strict Safety: NEVER push temporary task branches or worktree branches to remote origins.",
   ];
 
   if (instructions && instructions.trim()) {

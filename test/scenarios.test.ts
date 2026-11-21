@@ -56,10 +56,26 @@ test("Scenario: task-implementation reaches done and blocked", () => {
     { outcome: "context_ready" },
     { outcome: "implemented" },
     { outcome: "verified" },
+    { outcome: "review_passed" },
     { outcome: "reported" },
   ]);
   assert.equal(runDone.status, "completed");
   assert.equal(runDone.current_state, "done");
+
+  // Remediation loop from review back to implement
+  const dbReview = initDatabase(":memory:");
+  const runReviewLoop = advanceThrough(dbReview, def, rawYaml, "ti-review-loop", [
+    { outcome: "context_ready" },
+    { outcome: "implemented" },
+    { outcome: "verified" },
+    { outcome: "review_defects_found" },
+    { outcome: "implemented" },
+    { outcome: "verified" },
+    { outcome: "review_passed" },
+    { outcome: "reported" },
+  ]);
+  assert.equal(runReviewLoop.status, "completed");
+  assert.equal(runReviewLoop.current_state, "done");
 
   // Blocked path
   const db2 = initDatabase(":memory:");

@@ -11,6 +11,7 @@ Workflow Executor coordinates multi-step development processes with an authorita
 - **Optimistic Concurrency Control**: Guard transitions against race conditions and out-of-order execution using incremental revision checks (`expectedRevision`).
 - **Interactive Human Approval Gates**: Pause runs at sensitive transitions to approve, reject, or discuss steps in chat.
 - **Herdr Multiplexer Integration**: Dispatch non-blocking desktop notifications and manage `herdr:blocked` status lifecycle hooks when running inside Herdr (`HERDR_ENV=1`).
+- **Parallel Subagent Execution & Worktree Isolation**: Run batched tasks concurrently across isolated Git worktrees via Herdr (`HERDR_ENV=1`), with in-worktree review loops and integration merge barriers.
 - **Loop Thrash Guards**: Halt execution automatically when repetitive transition cycles exceed configurable retry limits.
 - **Terminal UI Dashboard**: Inspect runs, browse workflow templates, visualize ASCII/Unicode state graphs, and safely delete completed runs via `pi-workflow-tui`.
 - **Automatic Audit Journals**: Render chronological Markdown logs at `.workflow/runs/<workflow>/<task>/workflow-log.md`.
@@ -222,6 +223,19 @@ Reason: plan approved; break it into worker-ready tasks
 - **Chat about it**: Opens an interactive input prompt for questions or feedback. The agent responds in chat and re-presents the approval dialog.
 
 When running inside a Herdr workspace (`HERDR_ENV=1`), approval gates emit `herdr:blocked` status events and send non-blocking desktop notifications.
+
+---
+
+## Parallel Execution with Herdr Worktrees
+
+When running in Herdr terminal multiplexer environments (`HERDR_ENV=1`), `pi-workflow-executor` can execute implementation tasks concurrently in isolated Git worktrees:
+
+- **Isolated Worktrees**: Tasks in the same batch execute in separate Git worktrees created serially via `herdr worktree create`, preventing file collisions and cache pollution.
+- **Pipelined In-Worktree Review**: Each child `task-implementation` sub-workflow includes a dedicated `task_review` state with a reviewer subagent inspecting code within the worktree before reporting done.
+- **Integration Barrier**: Completed task branches are sequentially merged into the base branch (`{base-branch}/{task-slug}`) and verified before batch cleanup with `herdr worktree remove`.
+- **Automatic Fallback**: Outside Herdr, workflows run tasks sequentially in the main workspace.
+
+See [Parallel Execution Documentation](docs/parallel-execution.md) for architecture details, concurrency limits, and configuration.
 
 ---
 

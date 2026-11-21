@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { slugify, parseWorkflowInvocation } from "../index.ts";
+import { herdrOps } from "../herdr.ts";
 
 describe("slugify", () => {
   it("converts prompt into clean kebab-case slug up to 4 words", () => {
@@ -151,5 +153,89 @@ describe("parseWorkflowInvocation", () => {
     const res = await parseWorkflowInvocation("bug-fix --slug explicit-slug fix login button", ctx);
     assert.equal(inputCalled, false);
     assert.equal(res?.task, "explicit-slug");
+  });
+
+  it("emits herdr:blocked events and dispatches notification when HERDR_ENV=1", async () => {
+    const origEnv = process.env.HERDR_ENV;
+    process.env.HERDR_ENV = "1";
+
+    const origSpawn = herdrOps.spawn;
+    const spawnedArgs: any[] = [];
+    herdrOps.spawn = ((cmd: string, args: string[], options: any) => {
+      spawnedArgs.push({ cmd, args, options });
+      const mockChild = new EventEmitter();
+      (mockChild as any).unref = () => {};
+      return mockChild as any;
+    }) as any;
+
+    const events = new EventEmitter();
+    const emitted: any[] = [];
+    events.on("herdr:blocked", (e) => emitted.push(e));
+
+    const ctx = {
+      ui: {
+        async input() {
+          assert.deepEqual(emitted, [
+            { active: true, label: "Confirm workflow task slug" },
+          ]);
+          return "confirmed-task-slug";
+        },
+      },
+    };
+
+    try {
+      const res = await parseWorkflowInvocation(
+        "interactive-planning build onboarding flow",
+        ctx,
+        events
+      );
+      assert.equal(res?.task, "confirmed-task-slug");
+      assert.deepEqual(emitted, [
+        { active: true, label: "Confirm workflow task slug" },
+        { active: false },
+      ]);
+      assert.equal(spawnedArgs.length, 1);
+      assert.equal(spawnedArgs[0].args[2], "Confirm workflow task slug");
+    } finally {
+      herdrOps.spawn = origSpawn;
+      if (origEnv !== undefined) {
+        process.env.HERDR_ENV = origEnv;
+      } else {
+        delete process.env.HERDR_ENV;
+      }
+    }
+  });
+
+  it("omits herdr:blocked events when HERDR_ENV is unset", async () => {
+    const origEnv = process.env.HERDR_ENV;
+    delete process.env.HERDR_ENV;
+
+    const events = new EventEmitter();
+    const emitted: any[] = [];
+    events.on("herdr:blocked", (e) => emitted.push(e));
+
+    const ctx = {
+      ui: {
+        async input() {
+          return "confirmed-task-slug";
+        },
+      },
+    };
+
+    try {
+      const res = await parseWorkflowInvocation(
+        "interactive-planning build onboarding flow",
+        ctx,
+        events
+      );
+      assert.equal(res?.task, "confirmed-task-slug");
+      assert.equal(emitted.length, 0);
+    } finally {
+      if (origEnv !== undefined) {
+        process.env.HERDR_ENV = origEnv;
+      } else {
+        delete process.env.HERDR_ENV;
+      }
+    }
   });
 });

@@ -330,3 +330,36 @@ export function resolvePendingApproval(
     WHERE id = ?
   `).run(status, approvalId);
 }
+
+export function getStateVisits(db: DatabaseSync, runId: string): StateVisitRecord[] {
+  return db.prepare(`
+    SELECT * FROM state_visits WHERE run_id = ? ORDER BY id ASC
+  `).all(runId) as unknown as StateVisitRecord[];
+}
+
+export function deleteRun(db: DatabaseSync, runId: string): void {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as RunRecord | undefined;
+    if (!run) {
+      throw new Error(`Run '${runId}' not found`);
+    }
+    if (run.status === "active" || run.status === "paused") {
+      throw new Error(`Cannot delete run in '${run.status}' state. Only completed or aborted runs can be deleted.`);
+    }
+
+    db.prepare("DELETE FROM external_actions WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM loop_counts WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM invocations WHERE parent_run_id = ?").run(runId);
+    db.prepare("DELETE FROM pending_approvals WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM transitions WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM state_visits WHERE run_id = ?").run(runId);
+    db.prepare("DELETE FROM runs WHERE id = ?").run(runId);
+
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+

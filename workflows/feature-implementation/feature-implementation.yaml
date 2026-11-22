@@ -1,11 +1,13 @@
 name: feature-implementation
-version: 4
+version: 5
 concurrency: 3
 description: >-
-  Drive a feature from orientation through integration, with OpenSpec as the
-  system of record for planning and tasks: explore (optional) -> propose ->
-  apply -> verify -> review -> archive. OpenSpec artifact work follows
-  the matching OpenSpec skill; this workflow supplies the gates and refinement
+  Lifecycle orchestrator for features: drive a feature from orientation through
+  integration with OpenSpec as the system of record: explore (optional) ->
+  propose -> implementation (delegating tasks to task-implementation worker
+  sub-workflows) -> verify -> review -> archive. OpenSpec artifact work follows
+  the matching OpenSpec skill; this workflow orchestrates the end-to-end
+  lifecycle, supplying parallel worktree coordination, gates, and refinement
   loops OpenSpec does not model. Mechanical verification gates entry to
   behavioral review, so the reviewer always reasons about confirmed-green code.
 
@@ -91,14 +93,15 @@ states:
       workflow: task-implementation
     concurrency: 3
     goal: >-
-      Execute implementation of the planned tasks via the task-implementation
-      sub-workflow. In Herdr environments (HERDR_ENV=1), tasks execute
-      concurrently in staged batches (up to concurrency ceiling, default 3)
-      within isolated Git worktrees ({base-branch}/{task-slug}). Outside Herdr,
-      tasks run sequentially. Worker subagents run quality intake, implement
-      changes, verify tests, and undergo in-worktree review before reporting
-      done. Task worktrees are retained across the batch. If any child reports
-      blocked, hand off to planning_revision.
+      Orchestrate execution of planned tasks by delegating each task to
+      task-implementation as a child worker sub-workflow. In Herdr environments
+      (HERDR_ENV=1), tasks execute concurrently in staged batches (up to
+      concurrency ceiling, default 3) within isolated Git worktrees
+      ({base-branch}/{task-slug}). Outside Herdr, tasks run sequentially.
+      Child worker subagents run bounded intake, implement changes, verify
+      tests, and undergo in-worktree review before reporting done. Task
+      worktrees are retained across the batch. If any child reports blocked,
+      hand off to planning_revision.
     consumes: [proposal, specs_delta, design, tasks]
     produces: [tasks]
     exit_gate: "All batch tasks completed in `done`: implemented, verified, reviewed in-worktree, with evidence."

@@ -8,6 +8,10 @@ When executing workflows in a Herdr terminal multiplexer environment (`HERDR_ENV
 
 ## Architecture Overview
 
+Parallel task execution operates on a two-tier hierarchy distinguishing lifecycle orchestration from task execution:
+- **Parent Lifecycle Orchestrator (`feature-implementation` / `bug-fix`)**: Owns the end-to-end lifecycle, OpenSpec specifications, task batching, worktree provisioning, integration merging, and change archival. It never writes task code directly; it coordinates and delegates execution.
+- **Leaf Execution Engine (`task-implementation`)**: Bounded worker execution engine invoked per task in an isolated Git worktree. It performs quality intake against the task context or plan, implements the code, verifies with test evidence, passes in-worktree review (`task_review`), records evidence, and halts without re-planning or scope creep.
+
 ```
                      +---------------------------------------+
                      |  Parent Workflow (e.g. feature-impl)  |

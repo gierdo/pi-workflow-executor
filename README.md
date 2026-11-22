@@ -288,6 +288,23 @@ npx pi-workflow-tui
 
 ---
 
+## Workflow Decision Guide
+
+Use this guide to choose the right workflow for your use case:
+
+| Scenario / Intent | Recommended Workflow | Role / Execution Model |
+| --- | --- | --- |
+| **New Feature / Capability** | `feature-implementation` | **Lifecycle Orchestrator**: Explores requirements, creates OpenSpec delta specs, delegates batched tasks to child `task-implementation` workers across isolated worktrees, runs global verification, and archives changes. |
+| **Single Pre-Planned Task** | `task-implementation` | **Leaf Execution Engine**: Bounded worker execution of a single task from an OpenSpec change or `plan.md` artifact. Implements, verifies with evidence, passes in-worktree review, and stops without re-planning or scope creep. |
+| **Bug Fix** | `bug-fix` | **Lifecycle Orchestrator**: Triages and establishes proven root cause via `debug` sub-workflow, then plans, implements the fix, and verifies resolution. |
+| **Interactive Planning** | `interactive-planning` | **Planning Orchestrator**: Clarifies requirements, explores technical approaches, validates design, and breaks work into worker-ready tasks. |
+| **Codebase Reconnaissance** | `code-reconnaissance` | **Read-Only Explorer**: Maps structure, conventions, and dependencies grounded in code actually read. |
+| **Code Refactoring** | `refactoring` | **Preservation Engine**: Incremental refactoring while enforcing behavioral invariance via baseline verification. |
+| **Pre-Merge Code Review** | `merge-review` | **Review Engine**: Evaluates active branch changes against intent, conventions, security, and test coverage. |
+| **Root-Cause Debugging** | `debug` | **Diagnostic Engine**: Triages, reproduces, and diagnoses bugs without speculative fixes. |
+
+---
+
 ## Shipped Workflows
 
 The package bundles 8 standard workflows:
@@ -297,11 +314,11 @@ The package bundles 8 standard workflows:
 | `bug-fix` | `debug` | Drives a bug from report to verified fix. Uses the debug sub-workflow to establish root cause, then plans, implements, and verifies the fix. |
 | `code-reconnaissance` | `orient` | Performs read-only codebase reconnaissance, mapping structure, conventions, and dependencies grounded in code actually read. |
 | `debug` | `triage` | Triages, reproduces, and diagnoses a bug to establish proven root cause without applying speculative fixes. |
-| `feature-implementation` | `orientation` | Guides features through exploration, proposal, implementation loops, verification, review, and archival. |
+| `feature-implementation` | `orientation` | Lifecycle orchestrator driving features through exploration, OpenSpec proposal, delegated `task-implementation` workers across parallel worktrees, verification, behavioral review, and archival. |
 | `interactive-planning` | `investigate` | Formulates plans interactively through requirements clarification, approach exploration, design validation, and task breakdowns. |
 | `merge-review` | `scope` | Conducts thorough pre-merge reviews assessing code against intent, project standards, security, and test coverage. |
 | `refactoring` | `goal` | Refactors code while preserving behavioral invariance through baseline verification and incremental verified transformations. |
-| `task-implementation` | `intake` | Implements a single pre-planned task from a plan artifact within bounded scope, without re-planning. |
+| `task-implementation` | `intake` | Bounded leaf execution engine implementing a single pre-planned task from a plan artifact or OpenSpec change within strict boundaries, without re-planning. |
 
 ---
 

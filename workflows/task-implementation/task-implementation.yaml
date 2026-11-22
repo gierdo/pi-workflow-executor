@@ -1,16 +1,20 @@
 name: task-implementation
-version: 1
+version: 2
 description: >-
-  Implement a single pre-planned task from a plan and verify it, without
-  re-planning or expanding scope. The invariant is bounded execution: the task
-  arrives with examples, references, and acceptance criteria already decided;
-  this workflow implements exactly that, proves it with evidence, and stops. A
-  task that lacks the context to be implemented is reported back, not guessed
-  at.
+  Bounded leaf execution engine: implement a single pre-planned task from a
+  plan artifact or OpenSpec change and verify it, without re-planning or
+  expanding scope. Primarily invoked by parent orchestrators
+  (feature-implementation, bug-fix) or run directly for pre-planned tasks.
+  The invariant is bounded execution: the task arrives with examples,
+  references, and acceptance criteria already decided; this workflow
+  implements exactly that, proves it with evidence, and stops. A task that
+  lacks the context to be implemented is reported back, not guessed at.
 
-# Invariant: BOUNDED EXECUTION. The task arrives planned (approach, examples,
-# constraints, acceptance criteria). Do not re-plan, re-design, or widen scope:
-# an under-specified task is handed back, and a wrong plan loops to planning.
+# Invariant: BOUNDED LEAF EXECUTION. The task arrives planned (approach,
+# examples, constraints, acceptance criteria) from a parent orchestrator
+# (feature-implementation, bug-fix) or standalone plan. Do not re-plan,
+# re-design, or widen scope: an under-specified task is handed back, and a wrong
+# plan loops to planning.
 
 inputs:
   task:
@@ -26,9 +30,12 @@ artifacts:
       The plan this task belongs to, OWNED by the planning step upstream. It
       holds the task description, its acceptance criteria, the Ideal State
       Criteria (ISC), the constraints, and the code example or reference the
-      task must follow. This workflow reads it; it does not author it. The
-      orchestrator may pass a different plan path in the task message; when it
-      does, read there.
+      task must follow. Can be a standalone plan artifact
+      (`.workflow/plans/{task}/plan.md`) or OpenSpec change tasks
+      (`<changeRoot>/tasks.md` accompanied by delta specs in `<changeRoot>/specs/`).
+      This workflow reads it; it does not author it. The orchestrator may pass
+      a different plan path or change root in the task message; when it does,
+      read there.
   evidence:
     path: ".workflow/runs/task-implementation/{task}/implementation-evidence.md"
     description: >-
@@ -49,7 +56,10 @@ states:
   intake:
     goal: >-
       Read the task and confirm it can actually be implemented before touching
-      code. Everything needed is in the task message and the plan it references:
+      code. Explicitly accepts and validates either an OpenSpec change task
+      context (`<changeRoot>/tasks.md` and delta specs) or a standalone
+      `plan.md` artifact (`.workflow/plans/{task}/plan.md`). Everything needed
+      is in the task message and the plan or OpenSpec change it references:
       what to implement, the acceptance criteria, and the ISC. Verify the task
       carries a code example or snippet (imports, patterns, structure) OR an
       explicit reference to existing code to extrapolate from, AND explicit
@@ -57,9 +67,10 @@ states:
       avoid). This is quality control, not optional.
     consumes: [plan]
     exit_gate: >-
-      The task is understood, and it carries either a code example or a concrete
-      reference to existing code, plus explicit constraints - enough to
-      implement without guessing.
+      The task is understood from either an OpenSpec change task context or a
+      standalone plan.md artifact, and it carries either a code example or a
+      concrete reference to existing code, plus explicit constraints - enough
+      to implement without guessing.
     transitions:
       - outcome: under_specified
         when: >-

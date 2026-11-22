@@ -49,17 +49,17 @@ describe("parseWorkflowInvocation", () => {
   });
 
   it("parses name only and defaults task to 'main' with empty prompt", async () => {
-    const res = await parseWorkflowInvocation("interactive-planning", {});
+    const res = await parseWorkflowInvocation("planning", {});
     assert.deepEqual(res, {
-      name: "interactive-planning",
+      name: "planning",
       task: "main",
       prompt: "",
     });
   });
 
   it("parses name and treats entire rest as prompt", async () => {
-    const res = await parseWorkflowInvocation("interactive-planning want to move the extension", {});
-    assert.equal(res?.name, "interactive-planning");
+    const res = await parseWorkflowInvocation("planning want to move the extension", {});
+    assert.equal(res?.name, "planning");
     assert.equal(res?.prompt, "want to move the extension");
     assert.equal(res?.task, "want-to-move-the");
   });
@@ -100,8 +100,8 @@ describe("parseWorkflowInvocation", () => {
   });
 
   it("strips optional /workflow prefix if present", async () => {
-    const res = await parseWorkflowInvocation("/workflow interactive-planning build onboarding flow", {});
-    assert.equal(res?.name, "interactive-planning");
+    const res = await parseWorkflowInvocation("/workflow planning build onboarding flow", {});
+    assert.equal(res?.name, "planning");
     assert.equal(res?.task, "build-onboarding-flow");
     assert.equal(res?.prompt, "build onboarding flow");
   });
@@ -117,8 +117,8 @@ describe("parseWorkflowInvocation", () => {
       },
     };
 
-    const res = await parseWorkflowInvocation("interactive-planning design new feature", ctx);
-    assert.equal(res?.name, "interactive-planning");
+    const res = await parseWorkflowInvocation("planning design new feature", ctx);
+    assert.equal(res?.name, "planning");
     assert.equal(res?.task, "custom-slug-accepted");
     assert.equal(res?.prompt, "design new feature");
     assert.equal(capturedArg.value, "design-new-feature");
@@ -133,8 +133,8 @@ describe("parseWorkflowInvocation", () => {
       },
     };
 
-    const res = await parseWorkflowInvocation("interactive-planning design new feature", ctx);
-    assert.equal(res?.name, "interactive-planning");
+    const res = await parseWorkflowInvocation("planning design new feature", ctx);
+    assert.equal(res?.name, "planning");
     assert.equal(res?.task, "design-new-feature");
     assert.equal(res?.prompt, "design new feature");
   });
@@ -185,7 +185,7 @@ describe("parseWorkflowInvocation", () => {
 
     try {
       const res = await parseWorkflowInvocation(
-        "interactive-planning build onboarding flow",
+        "planning build onboarding flow",
         ctx,
         events
       );
@@ -224,7 +224,7 @@ describe("parseWorkflowInvocation", () => {
 
     try {
       const res = await parseWorkflowInvocation(
-        "interactive-planning build onboarding flow",
+        "planning build onboarding flow",
         ctx,
         events
       );

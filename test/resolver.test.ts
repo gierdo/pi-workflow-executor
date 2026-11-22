@@ -23,7 +23,7 @@ describe("resolver", () => {
     try {
       const workflows = listWorkflows(emptyTemp);
       const names = workflows.map((w) => w.name);
-      assert.equal(names.includes("interactive-planning"), true);
+      assert.equal(names.includes("planning"), true);
       assert.equal(names.includes("task-implementation"), true);
       assert.equal(names.includes("bug-fix"), true);
       assert.equal(names.includes("feature-implementation"), true);

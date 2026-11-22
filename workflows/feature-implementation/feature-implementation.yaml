@@ -2,14 +2,15 @@ name: feature-implementation
 version: 5
 concurrency: 3
 description: >-
-  Lifecycle orchestrator for features: drive a feature from orientation through
-  integration with OpenSpec as the system of record: explore (optional) ->
-  propose -> implementation (delegating tasks to task-implementation worker
-  sub-workflows) -> verify -> review -> archive. OpenSpec artifact work follows
+  Lifecycle orchestrator for features: drive a feature from intake through
+  integration with OpenSpec or plan.md as the system of record: intake ->
+  plan (invoking the interactive planning sub-workflow if needed) ->
+  implementation (delegating tasks to task-implementation worker
+  sub-workflows) -> verify -> review -> archive/land. OpenSpec artifact work follows
   the matching OpenSpec skill; this workflow orchestrates the end-to-end
   lifecycle, supplying parallel worktree coordination, gates, and refinement
-  loops OpenSpec does not model. Mechanical verification gates entry to
-  behavioral review, so the reviewer always reasons about confirmed-green code.
+  loops. Mechanical verification gates entry to behavioral review, so the
+  reviewer always reasons about confirmed-green code.
 
 # OpenSpec conventions (skills, changeRoot, gates, resume) are in the executor
 # skill. `{task}` is also the change name.
@@ -20,6 +21,9 @@ inputs:
     required: true
 
 artifacts:
+  plan:
+    path: ".workflow/plans/{task}/plan.md"
+    description: "Standalone plan when OpenSpec is not used."
   proposal:
     path: "<changeRoot>/proposal.md"
     description: "What and why, with scope boundaries."
@@ -39,54 +43,40 @@ artifacts:
     path: ".workflow/runs/feature-implementation/{task}/workflow-log.md"
     description: "Run journal, available before change creation and after archive."
 
-initial: orientation
+initial: intake
 
 states:
-  orientation:
+  intake:
     goal: >-
-      Understand the problem in its real context before proposing anything, and
-      run the OpenSpec project check. Read the affected code; confirm the
-      feature (or part of it) does not already exist, checking existing
-      OpenSpec capabilities (`openspec list --specs`, `openspec show`) as well
-      as the code; capture constraints. Discover and record the project's real
-      build, test, lint, and verification commands: later gates need them.
-      Thinking state: `openspec-explore` is optional; write no code and do not
-      create the change. Record findings and commands in the run journal.
+      Inspect the workspace to determine if a complete plan or OpenSpec change
+      already exists for {task}. Verify that actionable tasks and acceptance
+      criteria are defined before proceeding. Read affected code and discover/record
+      the project's real build, test, lint, and verification commands for later gates.
     subagent: scout
-    exit_gate: >-
-      OpenSpec has a usable root (or the user chose how to proceed); affected
-      components and existing/overlapping behavior (code and specs) are
-      identified; the verification commands are recorded; constraints and open
-      questions are captured.
+    exit_gate: "Workspace inspected for existing plan or OpenSpec change artifacts and verification commands recorded."
     transitions:
-      - outcome: oriented
-        when: "exit_gate holds"
-        to: specification
-        reason: "enough context to propose a change"
+      - outcome: plan_ready
+        when: "An actionable plan (plan.md or OpenSpec change tasks with acceptance criteria) already exists."
+        to: implementation
+        reason: "pre-existing plan verified; proceed to execution"
+      - outcome: plan_needed
+        when: "No complete plan exists for {task}."
+        to: plan
+        reason: "plan missing or incomplete; invoke planning sub-workflow"
 
-  specification:
+  plan:
+    invoke:
+      workflow: planning
     goal: >-
-      Turn the orientation findings into a complete change via
-      `openspec-propose`: proposal, delta specs with testable scenarios, design
-      when the schema calls for it, and tasks. Feed the recorded verification
-      commands and constraints into the artifacts. Record open questions and
-      resolve material ones with the user. Planning only: no implementation.
-    subagent: planner
-    produces: [proposal, specs_delta, design, tasks]
-    exit_gate: >-
-      The apply-required artifacts are done/skipped; the delta spec states
-      testable acceptance criteria; scope boundaries are explicit; tasks.md has
-      ordered steps tracing to those criteria; no material open questions remain.
+      Run the interactive planning sub-workflow to clarify requirements,
+      validate design, and generate worker-ready tasks.
+    produces: [proposal, specs_delta, design, tasks, plan]
+    exit_gate: "Planning sub-workflow completed successfully with ready tasks."
     transitions:
-      - outcome: context_gap_found
-        when: "Proposing exposed an orientation gap that needs investigating in the code or specs."
-        to: orientation
-        reason: "refinement: proposal surfaced a context gap"
-        max_retries: 2
-      - outcome: specified
+      - outcome: planned
         when: "exit_gate holds"
         to: implementation
-        reason: "change proposed with traceable planning artifacts"
+        reason: "planning complete; proceed to implementation"
 
   implementation:
     invoke:
@@ -117,29 +107,27 @@ states:
         reason: "all tasks implemented with checks and in-worktree review"
 
   planning_revision:
+    invoke:
+      workflow: planning
+      inputs:
+        revision: true
     goal: >-
-      Reconcile the planning artifacts with what implementation or review
-      uncovered, via `openspec-update-change`, for both a shallow plan fix and a
-      deeper requirement fix. Revise whichever of proposal, delta specs, design,
-      tasks are wrong and keep them coherent. If the intent has changed rather
-      than been refined, surface it and ask about a fresh change.
-    subagent: planner
-    consumes: [proposal, specs_delta, design, tasks, review]
-    produces: [proposal, specs_delta, design, tasks]
-    exit_gate: >-
-      Affected artifacts are revised and coherent, the apply-required set is
-      still done/skipped, every task traces to an acceptance criterion, and
-      every criterion is covered by at least one task.
+      Re-invoke the planning sub-workflow to reconcile the plan or specs
+      with what implementation or review uncovered. Revise whichever of proposal,
+      delta specs, design, tasks, or plan.md are wrong and keep them coherent.
+    consumes: [proposal, specs_delta, design, tasks, review, plan]
+    produces: [proposal, specs_delta, design, tasks, plan]
+    exit_gate: "Plan and specs reconciled."
     transitions:
       - outcome: plan_reconciled
         when: "exit_gate holds"
         to: implementation
-        reason: "plan reconciled; resume the revised tasks"
+        reason: "plan reconciled; resume implementation"
 
   verification:
     goal: >-
       Run the full mechanical verification suite with the commands recorded in
-      orientation (build, tests, lint, project checks) and `openspec validate`.
+      intake (build, tests, lint, project checks) and `openspec validate`.
       Mechanical only: no behavioral judgment.
     exit_gate: "The full suite and `openspec validate` run and pass with no errors or warnings."
     transitions:

@@ -154,8 +154,23 @@ test("Scenario: feature-implementation reaches done with gate approvals", () => 
 
   const db = initDatabase(":memory:");
   const run = advanceThrough(db, def, rawYaml, "feat-done", [
-    { outcome: "oriented" },
-    { outcome: "specified" },
+    { outcome: "plan_needed" },
+    { outcome: "planned" },
+    { outcome: "implemented" },
+    { outcome: "verified" },
+    { outcome: "review_passed" },
+    { outcome: "integrated", approve: true },
+  ]);
+  assert.equal(run.status, "completed");
+  assert.equal(run.current_state, "done");
+});
+
+test("Scenario: feature-implementation bypasses planning sub-workflow when plan is ready", () => {
+  const { def, rawYaml } = loadWorkflow("feature-implementation");
+
+  const db = initDatabase(":memory:");
+  const run = advanceThrough(db, def, rawYaml, "feat-plan-ready", [
+    { outcome: "plan_ready" },
     { outcome: "implemented" },
     { outcome: "verified" },
     { outcome: "review_passed" },
@@ -170,8 +185,8 @@ test("Scenario: feature-implementation handles child task-implementation blocked
 
   const db = initDatabase(":memory:");
   const run = advanceThrough(db, def, rawYaml, "feat-blocked", [
-    { outcome: "oriented" },
-    { outcome: "specified" },
+    { outcome: "plan_needed" },
+    { outcome: "planned" },
     { outcome: "implementation_blocked" },
     { outcome: "plan_reconciled" },
     { outcome: "implemented" },
@@ -183,8 +198,8 @@ test("Scenario: feature-implementation handles child task-implementation blocked
   assert.equal(run.current_state, "done");
 });
 
-test("Scenario: interactive-planning reaches done with consent gates", () => {
-  const { def, rawYaml } = loadWorkflow("interactive-planning");
+test("Scenario: planning reaches done with consent gates", () => {
+  const { def, rawYaml } = loadWorkflow("planning");
 
   const db = initDatabase(":memory:");
   const run = advanceThrough(db, def, rawYaml, "ip-done", [

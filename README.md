@@ -72,11 +72,11 @@ Get up and running with a workflow in under two minutes:
 
    - **Via natural language query:**
      ```text
-     Start the interactive-planning workflow for oauth2 authentication
+     Start the planning workflow for oauth2 authentication
      ```
    - **Via slash command:**
      ```text
-     /workflow interactive-planning design oauth2 authentication
+     /workflow planning design oauth2 authentication
      ```
 
 3. Confirm or customize the proposed task slug (interactive dialog for slash commands, or inferred from prompt).
@@ -97,7 +97,7 @@ You do not need to memorize slash commands. You can start or resume any workflow
 
 ```text
 "Fix the connection pool leak using the bug-fix workflow"
-"Start interactive-planning to design OAuth2 authentication"
+"Start planning to design OAuth2 authentication"
 "Run merge-review on the active branch"
 "Implement the auth middleware tests using task-implementation"
 ```
@@ -117,18 +117,18 @@ Run `/workflow` followed by the workflow identifier and your instructions in nat
 Examples:
 
 ```text
-/workflow interactive-planning design oauth2 authentication with refresh tokens
+/workflow planning design oauth2 authentication with refresh tokens
 /workflow bug-fix fix connection timeout in postgres pool
 /workflow task-implementation implement auth middleware tests
 ```
 
-- `<name>`: The identifier of the workflow (e.g. `interactive-planning`, `bug-fix`, or a custom workflow).
+- `<name>`: The identifier of the workflow (e.g. `planning`, `bug-fix`, or a custom workflow).
 - `[prompt...]`: Natural language instructions for the run. The extension normalizes your prompt into a kebab-case task slug and prompts you to confirm or edit it.
 
 To bypass the confirmation dialog and supply a specific task slug upfront, pass the `--slug` flag:
 
 ```text
-/workflow interactive-planning --slug oauth2-auth design oauth2 authentication
+/workflow planning --slug oauth2-auth design oauth2 authentication
 ```
 
 #### Inspecting and Resuming Runs
@@ -143,7 +143,7 @@ The selector displays existing runs and their statuses:
 
 ```text
 Select a workflow run to inspect or resume:
-- [ACTIVE] interactive-planning (oauth2-auth) - state: explore_approaches, rev: 5
+- [ACTIVE] planning (oauth2-auth) - state: explore_approaches, rev: 5
 - [PAUSED] bug-fix (conn-pool-leak) - state: verify, rev: 3 - waiting for approval
 - [COMPLETED] feature-implementation (dark-mode) - state: done, rev: 7
 ```
@@ -210,7 +210,7 @@ Lists workflow runs stored in the local SQLite database:
 Transitions with `requires_approval: true` pause automatically and prompt you for sign-off:
 
 ```text
-Workflow 'interactive-planning' (oauth2-auth) requires approval to transition to 'task_breakdown'.
+Workflow 'planning' (oauth2-auth) requires approval to transition to 'task_breakdown'.
 Reason: plan approved; break it into worker-ready tasks
 
 1. Approve transition to 'task_breakdown'
@@ -297,7 +297,7 @@ Use this guide to choose the right workflow for your use case:
 | **New Feature / Capability** | `feature-implementation` | **Lifecycle Orchestrator**: Explores requirements, creates OpenSpec delta specs, delegates batched tasks to child `task-implementation` workers across isolated worktrees, runs global verification, and archives changes. |
 | **Single Pre-Planned Task** | `task-implementation` | **Leaf Execution Engine**: Bounded worker execution of a single task from an OpenSpec change or `plan.md` artifact. Implements, verifies with evidence, passes in-worktree review, and stops without re-planning or scope creep. |
 | **Bug Fix** | `bug-fix` | **Lifecycle Orchestrator**: Triages and establishes proven root cause via `debug` sub-workflow, then plans, implements the fix, and verifies resolution. |
-| **Interactive Planning** | `interactive-planning` | **Planning Orchestrator**: Clarifies requirements, explores technical approaches, validates design, and breaks work into worker-ready tasks. |
+| **Planning** | `planning` | **Planning Orchestrator**: Clarifies requirements, explores technical approaches, validates design, and breaks work into worker-ready tasks. |
 | **Codebase Reconnaissance** | `code-reconnaissance` | **Read-Only Explorer**: Maps structure, conventions, and dependencies grounded in code actually read. |
 | **Code Refactoring** | `refactoring` | **Preservation Engine**: Incremental refactoring while enforcing behavioral invariance via baseline verification. |
 | **Pre-Merge Code Review** | `merge-review` | **Review Engine**: Evaluates active branch changes against intent, conventions, security, and test coverage. |
@@ -314,8 +314,8 @@ The package bundles 8 standard workflows:
 | `bug-fix` | `debug` | Drives a bug from report to verified fix. Uses the debug sub-workflow to establish root cause, then plans, implements, and verifies the fix. |
 | `code-reconnaissance` | `orient` | Performs read-only codebase reconnaissance, mapping structure, conventions, and dependencies grounded in code actually read. |
 | `debug` | `triage` | Triages, reproduces, and diagnoses a bug to establish proven root cause without applying speculative fixes. |
-| `feature-implementation` | `orientation` | Lifecycle orchestrator driving features through exploration, OpenSpec proposal, delegated `task-implementation` workers across parallel worktrees, verification, behavioral review, and archival. |
-| `interactive-planning` | `investigate` | Formulates plans interactively through requirements clarification, approach exploration, design validation, and task breakdowns. |
+| `feature-implementation` | `intake` | Lifecycle orchestrator driving features through intake (or invoking the planning sub-workflow), delegated `task-implementation` workers across parallel worktrees, verification, behavioral review, and archival. |
+| `planning` | `investigate` | Formulates plans interactively through requirements clarification, approach exploration, design validation, and task breakdowns. |
 | `merge-review` | `scope` | Conducts thorough pre-merge reviews assessing code against intent, project standards, security, and test coverage. |
 | `refactoring` | `goal` | Refactors code while preserving behavioral invariance through baseline verification and incremental verified transformations. |
 | `task-implementation` | `intake` | Bounded leaf execution engine implementing a single pre-planned task from a plan artifact or OpenSpec change within strict boundaries, without re-planning. |

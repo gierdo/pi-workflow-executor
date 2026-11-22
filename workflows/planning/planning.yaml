@@ -1,4 +1,4 @@
-name: interactive-planning
+name: planning
 version: 1
 description: >-
   Turn a user's request into a concrete plan with a worker-ready task breakdown,
@@ -7,15 +7,15 @@ description: >-
   task breakdown - never the implementation itself. The invariant is consent:
   each phase ends by presenting its output and waiting for the user before the
   next begins, so the plan reflects the user's intent at every step.
+  Supports producing standalone plan artifacts (.workflow/plans/{task}/plan.md)
+  or OpenSpec change artifacts (proposal, specs, design, tasks) when OpenSpec
+  is present.
 
 # Invariants: INTERACTIVITY and the PLANNING BOUNDARY. Each state does one phase,
 # presents its output, asks one clear question, and ENDS; the agent waits for
 # the user before any transition, and the exit_gate does not hold until the user
 # has confirmed. Never implement: no production code, no installs beyond a
 # throwaway validation script, no feature builds or tests.
-#
-# If the project uses OpenSpec, hand off to feature-implementation instead of
-# running the plan/task states. clarify_intent and requirements still feed it.
 
 inputs:
   task:
@@ -23,22 +23,37 @@ inputs:
       Short kebab-case slug identifying what is being planned
       (e.g. add-user-pagination). Namespaces this run's artifacts.
     required: true
+  revision:
+    description: "Set to true when invoked to revise an existing plan or spec gap."
+    required: false
 
 artifacts:
   plan:
     path: ".workflow/plans/{task}/plan.md"
     description: >-
-      The single deliverable: intent, user story, behavior (happy path + edge
-      cases), scope, effort/quality level, constraints, Ideal State Criteria
-      (ISC), the chosen approach and key decisions, architecture, dependencies,
-      risks from the premortem, and finally a Tasks section. Each task is
-      bite-sized (2-5 minutes of worker effort), names the files to touch, the
-      constraints that apply, a MANDATORY code example or reference, named
-      anti-patterns, and verifiable acceptance criteria tied to the ISC. The
-      orchestrator may override this path; when it does, write there and report
-      the real path.
+      The standalone deliverable when OpenSpec is not present: intent, user
+      story, behavior (happy path + edge cases), scope, effort/quality level,
+      constraints, Ideal State Criteria (ISC), the chosen approach and key
+      decisions, architecture, dependencies, risks from the premortem, and
+      finally a Tasks section. Each task is bite-sized (2-5 minutes of worker
+      effort), names the files to touch, the constraints that apply, a
+      MANDATORY code example or reference, named anti-patterns, and verifiable
+      acceptance criteria tied to the ISC. The orchestrator may override this
+      path; when it does, write there and report the real path.
+  proposal:
+    path: "<changeRoot>/proposal.md"
+    description: "What and why, with scope boundaries (when OpenSpec is present)."
+  specs_delta:
+    path: "<changeRoot>/specs/<capability-path>/spec.md"
+    description: "Delta specs with testable scenarios and acceptance criteria (when OpenSpec is present)."
+  design:
+    path: "<changeRoot>/design.md"
+    description: "Architecture and design decisions (when OpenSpec is present)."
+  tasks:
+    path: "<changeRoot>/tasks.md"
+    description: "Ordered worker-ready implementation tasks (when OpenSpec is present)."
   log:
-    path: ".workflow/runs/interactive-planning/{task}/workflow-log.md"
+    path: ".workflow/runs/planning/{task}/workflow-log.md"
     description: >-
       Append-only record of each state entry/exit and the transition taken,
       with a one-line reason. The audit trail for loops and cross-session
@@ -49,21 +64,20 @@ initial: investigate
 states:
   investigate:
     goal: >-
-      Orient quickly: tech stack, conventions, relevant existing code. Read
-      config files to learn the real tooling. If the orchestrator passed scout
-      context, read it first; consider delegating codebase research to a scout
-      if the system is unfamiliar or complex. Present a 2-4 sentence summary of
-      what you see, then END and wait for the user.
+      Orient quickly: tech stack, conventions, relevant existing code, and detect
+      whether OpenSpec is present. Read config files to learn real tooling. If the
+      orchestrator passed scout context, read it first; consider delegating
+      codebase research to a scout if the system is unfamiliar or complex.
+      If OpenSpec is present (an openspec/ directory or user confirms it), set
+      planning context to produce OpenSpec change artifacts (proposal, specs_delta,
+      design, tasks). If OpenSpec is not present, target standalone plan.md
+      (.workflow/plans/{task}/plan.md). Present a 2-4 sentence summary of what you
+      see and the detected planning mode, then END and wait for the user.
     exit_gate: >-
-      Enough context exists to understand the request in its setting, the
-      summary has been presented to the user, and the user has responded.
+      Enough context exists to understand the request in its setting, OpenSpec
+      presence is detected and target artifacts determined, the summary has been
+      presented to the user, and the user has responded.
     transitions:
-      - outcome: openspec_detected
-        when: >-
-          The project uses OpenSpec (an openspec/ directory, or the user
-          confirms it), so planning belongs to the openspec-* skills.
-        to: handoff
-        reason: "OpenSpec project: hand off to the OpenSpec-backed workflow"
       - outcome: oriented
         when: "exit_gate holds"
         to: clarify_intent
@@ -213,15 +227,20 @@ states:
 
   write_plan:
     goal: >-
-      Write the plan artifact: intent, user story, behavior (happy path and edge
-      cases), scope (in/out), effort and quality, constraints, the ISC, the
-      chosen approach with key decisions, architecture and data flow,
-      dependencies, and the premortem risks as accepted or mitigated. Present
-      the path and ask whether anything needs adjusting before the task
-      breakdown, then END and wait.
-    produces: [plan]
+      Write the planning artifact(s):
+      - If OpenSpec is present: produce change artifacts via openspec-propose
+        or manual authoring (proposal.md, delta specs in specs/, and design.md).
+      - If OpenSpec is absent: produce standalone .workflow/plans/{task}/plan.md
+        capturing intent, user story, behavior (happy path and edge cases),
+        scope (in/out), effort and quality, constraints, the ISC, the chosen
+        approach with key decisions, architecture and data flow, dependencies,
+        and the premortem risks as accepted or mitigated.
+      Present the path(s) and ask whether anything needs adjusting before the
+      task breakdown, then END and wait.
+    produces: [plan, proposal, specs_delta, design]
     exit_gate: >-
-      The plan artifact is written at the agreed path capturing every confirmed
+      The plan artifact (.workflow/plans/{task}/plan.md or OpenSpec proposal,
+      specs, design) is written at the agreed path capturing every confirmed
       decision, and the user has approved it (or requested edits that were made
       and re-confirmed).
     transitions:
@@ -239,17 +258,19 @@ states:
 
   task_breakdown:
     goal: >-
-      Break the plan into bite-sized tasks (2-5 minutes of worker effort each)
-      appended under a Tasks section of plan.md. Each task names the files to
-      create/modify, repeats the architectural constraints that apply, and - the
-      MANDATORY part - includes either an inline code example (imports,
-      patterns, structure) OR a concrete reference to existing code (file path +
-      line range + what to look at), plus named anti-patterns and verifiable
-      acceptance criteria tied to the ISC. Sequence tasks so each builds on the
-      last. A task with no example or reference will be reported back as
-      incomplete, so never emit one.
-    consumes: [plan]
-    produces: [plan]
+      Break the plan into bite-sized tasks (2-5 minutes of worker effort each):
+      - If OpenSpec is present: write tasks into <changeRoot>/tasks.md as ordered
+        checkbox implementation steps tracing to the delta spec acceptance criteria.
+      - If OpenSpec is absent: append tasks under a Tasks section of plan.md.
+      Each task names the files to touch/create, repeats the architectural
+      constraints that apply, and - the MANDATORY part - includes either an inline
+      code example (imports, patterns, structure) OR a concrete reference to
+      existing code (file path + line range + what to look at), plus named
+      anti-patterns and verifiable acceptance criteria tied to the ISC.
+      Sequence tasks so each builds on the last. A task with no example or
+      reference will be reported back as incomplete, so never emit one.
+    consumes: [plan, proposal, specs_delta, design]
+    produces: [plan, tasks]
     exit_gate: >-
       Every task is independently implementable, carries a code example or a
       concrete reference, names its files, constraints, anti-patterns, and
@@ -270,26 +291,19 @@ states:
         reason: "plan and task breakdown are ready"
         requires_approval: true
 
-  handoff:
-    terminal: true
-    goal: >-
-      The project uses OpenSpec, so planning is handed off to the
-      feature-implementation workflow (which drives openspec-propose /
-      openspec-update-change). The intent and requirements clarified here are
-      passed in as a sharp request rather than re-derived.
-
   done:
     terminal: true
     goal: >-
-      A plan artifact with a worker-ready task breakdown is written and
-      approved. Implementation is handed off to the task-implementation or
-      feature-implementation workflow; this workflow never implements.
+      A plan artifact (.workflow/plans/{task}/plan.md or OpenSpec change artifacts)
+      with a worker-ready task breakdown is written and approved. Implementation
+      is handed off to the task-implementation or feature-implementation workflow;
+      this workflow never implements.
 
 herdr:
   suggested_panes:
     - role: plan
       lifecycle: persistent
-      purpose: "Holds the plan.md artifact as it takes shape during write_plan and task_breakdown."
+      purpose: "Holds the plan.md or OpenSpec tasks.md artifact as it takes shape during write_plan and task_breakdown."
     - role: scout
       lifecycle: on-demand
       purpose: "Hosts a scout agent spawned to fill a codebase-fact gap mid-planning."

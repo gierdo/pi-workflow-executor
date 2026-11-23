@@ -15,6 +15,47 @@ export interface ChildInvocationDefinition {
   entry?: string;
 }
 
+export interface ExecutableGateObject {
+  run: string;
+  exit_code?: number;
+  timeout?: number;
+}
+
+export type ExecutableGateDefinition = string | ExecutableGateObject;
+
+export interface GateExecutionContext {
+  runId: string;
+  task: string;
+  state: string;
+  outcome?: string;
+  cwd?: string;
+}
+
+export class GateExecutionError extends Error {
+  public readonly command: string;
+  public readonly expectedExitCode: number;
+  public readonly actualExitCode: number | null;
+  public readonly output: string;
+
+  constructor(
+    command: string,
+    expectedExitCode: number,
+    actualExitCode: number | null,
+    output: string,
+    message?: string
+  ) {
+    super(
+      message ||
+        `Gate execution failed for command '${command}': expected exit code ${expectedExitCode}, received ${actualExitCode}.\nOutput:\n${output}`
+    );
+    this.name = "GateExecutionError";
+    this.command = command;
+    this.expectedExitCode = expectedExitCode;
+    this.actualExitCode = actualExitCode;
+    this.output = output;
+  }
+}
+
 export interface TransitionDefinition {
   outcome?: string;
   when?: string;
@@ -22,6 +63,7 @@ export interface TransitionDefinition {
   reason?: string;
   requires_approval?: boolean;
   max_retries?: number;
+  gate?: ExecutableGateDefinition;
 }
 
 export interface SubagentDefinition {
@@ -35,6 +77,7 @@ export interface StateDefinition {
   consumes?: string[];
   produces?: string[];
   exit_gate?: string;
+  gate?: ExecutableGateDefinition;
   terminal?: boolean;
   invoke?: ChildInvocationDefinition;
   subagent?: string | SubagentDefinition;

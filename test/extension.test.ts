@@ -280,6 +280,26 @@ test("workflow_transition tool supports three-option approval dialogue: Approve,
   assert.ok(mockCtx.ui.input);
 });
 
+function setupFailingGateWorkflow(tempDir: string) {
+  const flowDir = join(tempDir, ".workflow", "workflows", "test-failing-gate");
+  mkdirSync(flowDir, { recursive: true });
+  const yaml = `
+name: test-failing-gate
+initial: intake
+states:
+  intake:
+    gate:
+      run: "exit 42"
+      exit_code: 0
+    transitions:
+      - outcome: next
+        to: complete
+  complete:
+    terminal: true
+`;
+  writeFileSync(join(flowDir, "test-failing-gate.yaml"), yaml.trim(), "utf-8");
+}
+
 function setupApprovalWorkflow(tempDir: string) {
   const flowDir = join(tempDir, ".workflow", "workflows", "test-gated");
   mkdirSync(flowDir, { recursive: true });
@@ -680,6 +700,49 @@ test("showWorkflowsInterface omits herdr:blocked and notifications when HERDR_EN
     } else {
       delete process.env.HERDR_ENV;
     }
+    process.chdir(originalCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("workflow_transition returns structured error when gate execution fails", async () => {
+  const originalCwd = process.cwd();
+  const tempDir = mkdtempSync(join(tmpdir(), "workflow-gate-fail-test-"));
+  process.chdir(tempDir);
+  setupFailingGateWorkflow(tempDir);
+
+  try {
+    const { mockPi, registeredTools } = createMockPi();
+    await workflowExtension(mockPi);
+
+    const startTool = registeredTools["workflow_start"];
+    const transitionTool = registeredTools["workflow_transition"];
+
+    await startTool.execute(
+      "c1",
+      { workflow: "test-failing-gate", task: "t1" },
+      undefined,
+      undefined,
+      { ui: {} }
+    );
+
+    const res = await transitionTool.execute(
+      "c2",
+      { runId: "test-failing-gate-t1", outcomeId: "next", expectedRevision: 1 },
+      undefined,
+      undefined,
+      { ui: {} }
+    );
+
+    assert.ok(res.content);
+    assert.equal(res.content.length, 1);
+    assert.ok(res.content[0].text.includes("Gate execution failed"));
+    assert.equal(res.details.error, "gate_execution_failed");
+    assert.equal(res.details.command, "exit 42");
+    assert.equal(res.details.expectedExitCode, 0);
+    assert.equal(res.details.actualExitCode, 42);
+    assert.equal(typeof res.details.output, "string");
+  } finally {
     process.chdir(originalCwd);
     rmSync(tempDir, { recursive: true, force: true });
   }

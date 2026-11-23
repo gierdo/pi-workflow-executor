@@ -456,6 +456,19 @@ export default async function (pi: ExtensionAPI) {
           details: result,
         };
       } catch (err) {
+        if (err instanceof runner.GateExecutionError || (err as any)?.name === "GateExecutionError") {
+          const gateErr = err as any;
+          return {
+            content: [{ type: "text", text: `Gate execution failed: ${gateErr.message}` }],
+            details: {
+              error: "gate_execution_failed",
+              command: gateErr.command,
+              expectedExitCode: gateErr.expectedExitCode,
+              actualExitCode: gateErr.actualExitCode,
+              output: gateErr.output,
+            },
+          };
+        }
         return {
           content: [{ type: "text", text: `Transition failed: ${(err as Error).message}` }],
           details: { error: (err as Error).message },

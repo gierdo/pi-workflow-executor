@@ -453,6 +453,7 @@ states:
 | `consumes` | string[] | No | Artifact identifiers read during this state. |
 | `produces` | string[] | No | Artifact identifiers written during this state. |
 | `exit_gate` | string | No | Conditions that must hold before advancing. |
+| `gate` | string / object | No | Optional executable gate command. Accepts string shorthand (`"npm test"`) or structured object (`{ run: "npm test", exit_code: 0, timeout: 30000 }`). Evaluated before leaving the state. |
 | `terminal` | boolean | No | When `true`, marks the end of a run. Must not define transitions. |
 | `concurrency` | integer | No | State-level concurrency limit for fan-out execution (must be >= 1). |
 | `invoke` | object | No | Child workflow invocation: `{ workflow: string, inputs?: map, entry?: string }`. |
@@ -467,6 +468,7 @@ states:
 | `when` | string | No | Condition or trigger for this transition. |
 | `to` | string | Yes | Target state identifier (must exist in `states`). |
 | `reason` | string | No | Rationale recorded in SQLite and projected to audit logs. |
+| `gate` | string / object | No | Optional executable gate command evaluated when this transition is taken, after any state-level gate succeeds. |
 | `requires_approval` | boolean | No | When `true`, pauses the run and prompts for interactive user sign-off. |
 | `max_retries` | integer | No | Maximum loop iterations before the thrash guard halts execution. |
 
@@ -515,6 +517,33 @@ The orchestrator:
 1. Dispatches the subagent with its active state, goal, inputs, and artifact paths.
 2. Evaluates returned work against the state `exit_gate`.
 3. Commits the transition via `workflow_transition`. Subagents never commit state transitions directly.
+
+### Executable Gateways (`gate:`)
+
+States and transitions can define automated shell verification commands via `gate:`. An executable gate accepts either a string shorthand command or a structured configuration object:
+
+```yaml
+states:
+  verify:
+    goal: Run automated tests before advancing to completion.
+    gate: "pnpm test"
+    transitions:
+      - outcome: tests_passed
+        to: complete
+        gate:
+          run: "git diff --exit-code"
+          exit_code: 0
+          timeout: 10000
+      - outcome: tests_failed
+        to: rework
+```
+
+Gate execution semantics:
+
+1. **Evaluation Order**: When a transition is initiated, any state-level `gate` executes first. If it succeeds, the transition-level `gate` (if defined) executes next.
+2. **Context Environment**: Gate scripts run in the project root with context environment variables: `WORKFLOW_RUN_ID`, `WORKFLOW_TASK`, `WORKFLOW_STATE`, and `WORKFLOW_OUTCOME`.
+3. **Atomic Failure Handling**: If a gate command fails (non-zero exit code), times out (default 30,000ms), or returns an unexpected exit code, the transition is aborted immediately. SQLite database revision, active state, and visit logs remain untouched.
+4. **Informational vs Executable**: The informational `exit_gate` remains available as human-readable exit criteria and guidance for subagents, while `gate` enforces deterministic, automated verification.
 
 ---
 

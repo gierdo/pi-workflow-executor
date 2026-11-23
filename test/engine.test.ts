@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { initDatabase, getRun, getPendingApproval } from "../runner/db.ts";
 import {
   startWorkflowRun,
@@ -7,7 +10,7 @@ import {
   submitOutcome,
   confirmPendingApproval,
 } from "../runner/engine.ts";
-import type { WorkflowDefinition } from "../runner/types.ts";
+import { GateExecutionError, type WorkflowDefinition } from "../runner/types.ts";
 
 const mockDefYaml = `
 name: sample-workflow
@@ -177,3 +180,235 @@ test("submitOutcome pauses run when transition max_retries limit is exceeded (P1
   const run = getRun(db, "r-max-retries");
   assert.equal(run?.status, "paused");
 });
+
+test("submitOutcome succeeds when state.gate passes", () => {
+  const db = initDatabase(":memory:");
+  const def: WorkflowDefinition = {
+    name: "state-gate-pass",
+    initial: "stepA",
+    states: {
+      stepA: {
+        gate: 'node -e "process.exit(0)"',
+        transitions: [{ outcome: "next", to: "stepB" }],
+      },
+      stepB: { terminal: true },
+    },
+  };
+  const yaml = "name: state-gate-pass\ninitial: stepA\nstates:\n  stepA:\n    gate: 'node -e \"process.exit(0)\"'\n    transitions:\n      - outcome: next\n        to: stepB\n  stepB:\n    terminal: true";
+  startWorkflowRun(db, def, yaml, "task-1", "run-sg-pass");
+
+  const res = submitOutcome(db, def, {
+    runId: "run-sg-pass",
+    outcomeId: "next",
+    expectedRevision: 1,
+  });
+
+  assert.equal(res.status, "terminal");
+  assert.equal(res.nextState, "stepB");
+  assert.equal(res.revision, 2);
+
+  const run = getRun(db, "run-sg-pass");
+  assert.equal(run?.current_state, "stepB");
+  assert.equal(run?.revision, 2);
+  assert.equal(run?.status, "completed");
+});
+
+test("submitOutcome succeeds when matched.gate passes", () => {
+  const db = initDatabase(":memory:");
+  const def: WorkflowDefinition = {
+    name: "matched-gate-pass",
+    initial: "stepA",
+    states: {
+      stepA: {
+        transitions: [
+          {
+            outcome: "next",
+            to: "stepB",
+            gate: 'node -e "process.exit(0)"',
+          },
+        ],
+      },
+      stepB: { terminal: true },
+    },
+  };
+  const yaml = "name: matched-gate-pass\ninitial: stepA\nstates:\n  stepA:\n    transitions:\n      - outcome: next\n        to: stepB\n        gate: 'node -e \"process.exit(0)\"'\n  stepB:\n    terminal: true";
+  startWorkflowRun(db, def, yaml, "task-1", "run-mg-pass");
+
+  const res = submitOutcome(db, def, {
+    runId: "run-mg-pass",
+    outcomeId: "next",
+    expectedRevision: 1,
+  });
+
+  assert.equal(res.status, "terminal");
+  assert.equal(res.nextState, "stepB");
+  assert.equal(res.revision, 2);
+
+  const run = getRun(db, "run-mg-pass");
+  assert.equal(run?.current_state, "stepB");
+  assert.equal(run?.revision, 2);
+  assert.equal(run?.status, "completed");
+});
+
+test("submitOutcome throws GateExecutionError when state.gate fails and run maintains original state and revision", () => {
+  const db = initDatabase(":memory:");
+  const def: WorkflowDefinition = {
+    name: "state-gate-fail",
+    initial: "stepA",
+    states: {
+      stepA: {
+        gate: 'node -e "console.error(\'gate failed\'); process.exit(1)"',
+        transitions: [{ outcome: "next", to: "stepB" }],
+      },
+      stepB: { terminal: true },
+    },
+  };
+  const yaml = "name: state-gate-fail\ninitial: stepA\nstates:\n  stepA:\n    gate: 'node -e \"console.error(\\'gate failed\\'); process.exit(1)\"'\n    transitions:\n      - outcome: next\n        to: stepB\n  stepB:\n    terminal: true";
+  startWorkflowRun(db, def, yaml, "task-1", "run-sg-fail");
+
+  assert.throws(
+    () => {
+      submitOutcome(db, def, {
+        runId: "run-sg-fail",
+        outcomeId: "next",
+        expectedRevision: 1,
+      });
+    },
+    (err: unknown) => {
+      assert(err instanceof GateExecutionError);
+      assert.equal(err.expectedExitCode, 0);
+      assert.equal(err.actualExitCode, 1);
+      assert.ok(err.output.includes("gate failed"));
+      return true;
+    }
+  );
+
+  const run = getRun(db, "run-sg-fail");
+  assert.equal(run?.current_state, "stepA");
+  assert.equal(run?.revision, 1);
+  assert.equal(run?.status, "active");
+});
+
+test("submitOutcome throws GateExecutionError when matched.gate fails and run maintains original state and revision", () => {
+  const db = initDatabase(":memory:");
+  const def: WorkflowDefinition = {
+    name: "matched-gate-fail",
+    initial: "stepA",
+    states: {
+      stepA: {
+        transitions: [
+          {
+            outcome: "next",
+            to: "stepB",
+            gate: { run: 'node -e "process.exit(2)"', exit_code: 0 },
+          },
+        ],
+      },
+      stepB: { terminal: true },
+    },
+  };
+  const yaml = "name: matched-gate-fail\ninitial: stepA\nstates:\n  stepA:\n    transitions:\n      - outcome: next\n        to: stepB\n        gate:\n          run: 'node -e \"process.exit(2)\"'\n  stepB:\n    terminal: true";
+  startWorkflowRun(db, def, yaml, "task-1", "run-mg-fail");
+
+  assert.throws(
+    () => {
+      submitOutcome(db, def, {
+        runId: "run-mg-fail",
+        outcomeId: "next",
+        expectedRevision: 1,
+      });
+    },
+    (err: unknown) => {
+      assert(err instanceof GateExecutionError);
+      assert.equal(err.expectedExitCode, 0);
+      assert.equal(err.actualExitCode, 2);
+      return true;
+    }
+  );
+
+  const run = getRun(db, "run-mg-fail");
+  assert.equal(run?.current_state, "stepA");
+  assert.equal(run?.revision, 1);
+  assert.equal(run?.status, "active");
+});
+
+test("submitOutcome executes state gate before matched gate", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-order-"));
+  const logFile = path.join(tempDir, "order.log");
+
+  try {
+    const db = initDatabase(":memory:");
+    const def: WorkflowDefinition = {
+      name: "gate-order",
+      initial: "stepA",
+      states: {
+        stepA: {
+          gate: `node -e "require('node:fs').appendFileSync(process.argv[1], 'state;')"` + ` "${logFile}"`,
+          transitions: [
+            {
+              outcome: "next",
+              to: "stepB",
+              gate: `node -e "require('node:fs').appendFileSync(process.argv[1], 'matched;')"` + ` "${logFile}"`,
+            },
+          ],
+        },
+        stepB: { terminal: true },
+      },
+    };
+    const yaml = "name: gate-order\ninitial: stepA\nstates:\n  stepA:\n    transitions:\n      - outcome: next\n        to: stepB\n  stepB:\n    terminal: true";
+    startWorkflowRun(db, def, yaml, "task-order", "run-order");
+
+    const res = submitOutcome(db, def, {
+      runId: "run-order",
+      outcomeId: "next",
+      expectedRevision: 1,
+    });
+
+    assert.equal(res.status, "terminal");
+    const content = fs.readFileSync(logFile, "utf-8");
+    assert.equal(content, "state;matched;");
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("matched gate does not execute if state gate fails", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-order-fail-"));
+  const logFile = path.join(tempDir, "matched.log");
+
+  try {
+    const db = initDatabase(":memory:");
+    const def: WorkflowDefinition = {
+      name: "gate-order-fail",
+      initial: "stepA",
+      states: {
+        stepA: {
+          gate: 'node -e "process.exit(1)"',
+          transitions: [
+            {
+              outcome: "next",
+              to: "stepB",
+              gate: `node -e "require('node:fs').writeFileSync(process.argv[1], 'ran')"` + ` "${logFile}"`,
+            },
+          ],
+        },
+        stepB: { terminal: true },
+      },
+    };
+    const yaml = "name: gate-order-fail\ninitial: stepA\nstates:\n  stepA:\n    transitions:\n      - outcome: next\n        to: stepB\n  stepB:\n    terminal: true";
+    startWorkflowRun(db, def, yaml, "task-order-fail", "run-order-fail");
+
+    assert.throws(() => {
+      submitOutcome(db, def, {
+        runId: "run-order-fail",
+        outcomeId: "next",
+        expectedRevision: 1,
+      });
+    }, GateExecutionError);
+
+    assert.equal(fs.existsSync(logFile), false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+

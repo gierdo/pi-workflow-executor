@@ -5,3 +5,4 @@ export * from "./engine.ts";
 export * from "./invocations.ts";
 export * from "./actions.ts";
 export * from "./journal.ts";
+export * from "./gate.ts";

@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { WorkflowDefinition, TransitionInput, TransitionResult, RunRecord } from "./types.ts";
 import { validateDefinition, computeFingerprint } from "./validator.ts";
 import { checkAndIncrementLoop } from "./invocations.ts";
+import { executeGate } from "./gate.ts";
 import {
   createRun,
   getRun,
@@ -100,6 +101,24 @@ export function submitOutcome(
   const activeVisit = getActiveVisit(db, run.id);
   if (!activeVisit) {
     throw new Error(`No active state visit for run '${run.id}'`);
+  }
+
+  if (currentState.gate) {
+    executeGate(currentState.gate, {
+      runId: run.id,
+      task: run.task,
+      state: run.current_state,
+      outcome: input.outcomeId,
+    });
+  }
+
+  if (matched.gate) {
+    executeGate(matched.gate, {
+      runId: run.id,
+      task: run.task,
+      state: run.current_state,
+      outcome: input.outcomeId,
+    });
   }
 
   if (matched.max_retries !== undefined) {

@@ -5,6 +5,35 @@ export function computeFingerprint(rawYaml: string): string {
   return createHash("sha256").update(rawYaml.replace(/\r\n/g, "\n").trim()).digest("hex");
 }
 
+export function validateGate(gate: unknown, location: string, errors: string[]): void {
+  if (gate === null || gate === undefined) {
+    return;
+  }
+
+  if (typeof gate === "string") {
+    if (!gate.trim()) {
+      errors.push(`${location} has empty 'gate' command string`);
+    }
+    return;
+  }
+
+  if (typeof gate === "object" && !Array.isArray(gate)) {
+    const obj = gate as Record<string, unknown>;
+    if (typeof obj.run !== "string" || !obj.run.trim()) {
+      errors.push(`${location} 'gate' object requires a non-empty string 'run' property`);
+    }
+    if (obj.exit_code !== undefined && !Number.isInteger(obj.exit_code)) {
+      errors.push(`${location} 'gate.exit_code' must be an integer`);
+    }
+    if (obj.timeout !== undefined && (!Number.isInteger(obj.timeout) || (obj.timeout as number) < 1)) {
+      errors.push(`${location} 'gate.timeout' must be an integer >= 1`);
+    }
+    return;
+  }
+
+  errors.push(`${location} 'gate' must be a string or object`);
+}
+
 export function validateDefinition(def: WorkflowDefinition): ValidationResult {
   const errors: string[] = [];
 
@@ -48,6 +77,8 @@ export function validateDefinition(def: WorkflowDefinition): ValidationResult {
       }
       continue;
     }
+
+    validateGate(state.gate, `State '${stateId}'`, errors);
 
     // Child invocation validation
     if (state.invoke) {
@@ -95,6 +126,8 @@ export function validateDefinition(def: WorkflowDefinition): ValidationResult {
       } else if (!stateIds.has(tr.to)) {
         errors.push(`State '${stateId}' transition #${i + 1} targets unknown state '${tr.to}'`);
       }
+
+      validateGate(tr.gate, `State '${stateId}' transition #${i + 1}`, errors);
 
       if (tr.outcome) {
         if (typeof tr.outcome !== "string") {

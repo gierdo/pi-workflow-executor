@@ -1,8 +1,35 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createRequire } from "node:module";
+import { EventEmitter } from "node:events";
 
 const require = createRequire(import.meta.url);
+
+export function createMockPi() {
+  const registeredCommands: string[] = [];
+  const commandHandlers: Record<string, any> = {};
+  const registeredTools: Record<string, any> = {};
+  const sentMessages: any[] = [];
+  const events = new EventEmitter();
+
+  const mockPi: any = {
+    events,
+    registerCommand(name: string, def?: any) {
+      registeredCommands.push(name);
+      if (def?.handler) {
+        commandHandlers[name] = def.handler;
+      }
+    },
+    registerTool(opts: any) {
+      registeredTools[opts.name] = opts;
+    },
+    sendUserMessage(msg: any, options?: any) {
+      sentMessages.push({ msg, options });
+    },
+  };
+
+  return { mockPi, registeredCommands, commandHandlers, registeredTools, sentMessages, events };
+}
 
 export function getActivePiNodeModules(): string | null {
   try {

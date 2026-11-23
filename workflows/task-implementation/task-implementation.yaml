@@ -149,7 +149,7 @@ states:
   task_review:
     goal: >-
       Perform behavioral code review on this task diff within the isolated
-      worktree. Check that the code matches the plan, meets quality and
+      worktree (or main worktree for sequential tasks). Check that the code matches the plan, meets quality and
       correctness criteria, and introduces no defects or security risks.
     subagent: reviewer
     exit_gate: >-

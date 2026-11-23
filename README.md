@@ -230,8 +230,9 @@ When running inside a Herdr workspace (`HERDR_ENV=1`), approval gates emit `herd
 
 When running in Herdr terminal multiplexer environments (`HERDR_ENV=1`), `pi-workflow-executor` can execute implementation tasks concurrently in isolated Git worktrees:
 
-- **Isolated Worktrees**: Tasks in the same batch execute in separate Git worktrees created serially via `herdr worktree create`, preventing file collisions and cache pollution.
-- **Pipelined In-Worktree Review**: Each child `task-implementation` sub-workflow includes a dedicated `task_review` state with a reviewer subagent inspecting code within the worktree before reporting done.
+- **Isolated Worktrees for Concurrent Tasks**: Tasks in parallel batches execute in separate Git worktrees created serially via `herdr worktree create`, preventing file collisions and cache pollution.
+- **Main Worktree for Sequential Tasks**: Strictly sequential tasks (single-task stages or steps with no concurrent peers) run directly with subagents in the main worktree on the base branch, skipping worktree provisioning and branch merging overhead.
+- **Pipelined In-Worktree Review**: Each child `task-implementation` sub-workflow includes a dedicated `task_review` state with a reviewer subagent inspecting code within the worktree (or main worktree) before reporting done.
 - **Integration Barrier**: Completed task branches are sequentially merged into the base branch (`{base-branch}/{task-slug}`) and verified before batch cleanup with `herdr worktree remove`.
 - **Automatic Fallback**: Outside Herdr, workflows run tasks sequentially in the main workspace.
 

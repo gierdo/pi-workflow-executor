@@ -11,7 +11,8 @@ import {
   completeInvocationByTask,
 } from "../runner/invocations.ts";
 import { isHerdrActive, createHerdrWorktree, removeHerdrWorktree, herdrOps } from "../herdr.ts";
-import { loadYamlParser, resolveWorkflowsDir } from "./helpers.ts";
+import { loadYamlParser, resolveWorkflowsDir, createMockPi } from "./helpers.ts";
+import workflowExtension from "../index.ts";
 import { readFileSync } from "node:fs";
 
 const parse = loadYamlParser();
@@ -226,4 +227,134 @@ test("Workflow definitions reflect in-worktree review and concurrency attributes
   assert.equal(featImplDef.concurrency, 3);
   assert.equal(featImplDef.states.implementation.concurrency, 3);
   assert.ok(featImplDef.states.integration.goal.includes("integration barrier"));
+});
+
+test("Sequential steps vs parallel batches: only concurrent tasks allocate worktrees", async () => {
+  const origEnv = process.env.HERDR_ENV;
+  const origExecSync = herdrOps.execSync;
+  const executedCommands: string[] = [];
+  const originalCwd = process.cwd();
+  const tempDir = mkdtempSync(join(tmpdir(), "pw-seq-parallel-"));
+
+  try {
+    process.env.HERDR_ENV = "1";
+
+    herdrOps.execSync = ((cmd: string) => {
+      executedCommands.push(cmd);
+      if (cmd.startsWith("herdr worktree create")) {
+        const branchMatch = cmd.match(/--branch "([^"]+)"/);
+        const labelMatch = cmd.match(/--label "([^"]+)"/);
+        const branch = branchMatch ? branchMatch[1] : "unknown";
+        const label = labelMatch ? labelMatch[1] : "unknown";
+        return JSON.stringify({
+          result: {
+            worktree: { path: `/tmp/worktrees/${branch}` },
+            workspace: { id: `ws_${label}` },
+          },
+        });
+      }
+      return "";
+    }) as any;
+
+    process.chdir(tempDir);
+
+    // 1. Verify orchestrator prompt instructs main worktree for sequential steps
+    const { mockPi, registeredTools } = createMockPi();
+    await workflowExtension(mockPi);
+    const startTool = registeredTools["workflow_start"];
+    assert.ok(startTool);
+
+    const res = await startTool.execute(
+      "c1",
+      { workflow: "feature-implementation", task: "mixed-plan" },
+      undefined,
+      undefined,
+      { ui: {} }
+    );
+    const prompt = res.content[0].text;
+    assert.match(prompt, /sequential (tasks|steps).*main worktree/i);
+    assert.match(prompt, /only.*parallel.*worktree/i);
+
+    // 2. Lifecycle: task 1 (seq), tasks 2-4 (parallel), task 5 (seq)
+    const db = initDatabase(join(tempDir, "state.db"));
+    createRun(db, {
+      id: "parent-mixed-run",
+      task: "mixed-plan",
+      workflow: "feature-implementation",
+      initialState: "implementation",
+      definitionFingerprint: "fp-mixed",
+    });
+
+    const baseBranch = "feat/mixed-plan";
+
+    // Stage 1: task 1 sequential in main worktree
+    createChildInvocation(db, "parent-mixed-run", "task-implementation", {
+      taskSlug: "task-1",
+      childRunId: "task-impl-1",
+    });
+    const stage1Active = getActiveInvocations(db, "parent-mixed-run");
+    assert.equal(stage1Active.length, 1);
+    assert.equal(stage1Active[0].worktree, null);
+    completeInvocationByTask(db, "parent-mixed-run", "task-1", "completed");
+
+    // Stage 2: tasks 2, 3, 4 parallel batch in worktrees
+    const parallelTasks = ["task-2", "task-3", "task-4"];
+    const createdWts: Array<{ worktreePath: string; workspaceId?: string }> = [];
+
+    for (const slug of parallelTasks) {
+      const wt = createHerdrWorktree({
+        cwd: tempDir,
+        branch: `${baseBranch}/${slug}`,
+        label: slug,
+      });
+      createdWts.push(wt);
+      createChildInvocation(db, "parent-mixed-run", "task-implementation", {
+        taskSlug: slug,
+        childRunId: `task-impl-${slug}`,
+        worktree: wt.worktreePath,
+        branch: `${baseBranch}/${slug}`,
+      });
+    }
+
+    const stage2Active = getActiveInvocations(db, "parent-mixed-run");
+    assert.equal(stage2Active.length, 3);
+    for (const inv of stage2Active) {
+      assert.ok(inv.worktree?.startsWith("/tmp/worktrees/"));
+    }
+
+    for (const slug of parallelTasks) {
+      completeInvocationByTask(db, "parent-mixed-run", slug, "completed");
+    }
+
+    for (const wt of createdWts) {
+      if (wt.workspaceId) removeHerdrWorktree(wt.workspaceId);
+    }
+
+    // Stage 3: task 5 sequential in main worktree
+    createChildInvocation(db, "parent-mixed-run", "task-implementation", {
+      taskSlug: "task-5",
+      childRunId: "task-impl-5",
+    });
+    const stage3Active = getActiveInvocations(db, "parent-mixed-run");
+    assert.equal(stage3Active.length, 1);
+    assert.equal(stage3Active[0].worktree, null);
+    completeInvocationByTask(db, "parent-mixed-run", "task-5", "completed");
+
+    const creates = executedCommands.filter((c) => c.startsWith("herdr worktree create"));
+    const removes = executedCommands.filter((c) => c.startsWith("herdr worktree remove"));
+
+    assert.equal(creates.length, 3, "Only parallel tasks 2, 3, 4 should create worktrees");
+    assert.equal(removes.length, 3, "Only parallel tasks 2, 3, 4 should remove worktrees");
+
+    db.close();
+  } finally {
+    process.chdir(originalCwd);
+    rmSync(tempDir, { recursive: true, force: true });
+    herdrOps.execSync = origExecSync;
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
 });

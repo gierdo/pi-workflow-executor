@@ -85,12 +85,13 @@ states:
     goal: >-
       Orchestrate execution of planned tasks by delegating each task to
       task-implementation as a child worker sub-workflow. In Herdr environments
-      (HERDR_ENV=1), tasks execute concurrently in staged batches (up to
+      (HERDR_ENV=1), concurrent tasks execute in parallel staged batches (up to
       concurrency ceiling, default 3) within isolated Git worktrees
-      ({base-branch}/{task-slug}). Outside Herdr, tasks run sequentially.
-      Child worker subagents run bounded intake, implement changes, verify
-      tests, and undergo in-worktree review before reporting done. Task
-      worktrees are retained across the batch. If any child reports blocked,
+      ({base-branch}/{task-slug}), while strictly sequential tasks execute
+      directly in the main worktree. Outside Herdr, all tasks run sequentially
+      in the main workspace. Child worker subagents run bounded intake, implement
+      changes, verify tests, and undergo in-worktree review before reporting done. Task
+      worktrees are retained across the parallel batch. If any child reports blocked,
       hand off to planning_revision.
     consumes: [proposal, specs_delta, design, tasks]
     produces: [tasks]
@@ -177,7 +178,7 @@ states:
       remote pushes. If merge conflicts occur, aborts merge and returns to the
       task worktree for resolution.
       2. Runs final integration verification across merged code.
-      3. Cleans up task worktrees via `herdr worktree remove`.
+      3. Cleans up any task worktrees via `herdr worktree remove`.
       4. Lands the work per repo conventions and archives the change
       (`openspec-archive-change`).
     consumes: [proposal, specs_delta]

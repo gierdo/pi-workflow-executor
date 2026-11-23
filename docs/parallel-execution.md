@@ -10,7 +10,7 @@ When executing workflows in a Herdr terminal multiplexer environment (`HERDR_ENV
 
 Parallel task execution operates on a two-tier hierarchy distinguishing lifecycle orchestration from task execution:
 - **Parent Lifecycle Orchestrator (`feature-implementation` / `bug-fix`)**: Owns the end-to-end lifecycle, OpenSpec specifications, task batching, worktree provisioning, integration merging, and change archival. It never writes task code directly; it coordinates and delegates execution.
-- **Leaf Execution Engine (`task-implementation`)**: Bounded worker execution engine invoked per task in an isolated Git worktree. It performs quality intake against the task context or plan, implements the code, verifies with test evidence, passes in-worktree review (`task_review`), records evidence, and halts without re-planning or scope creep.
+- **Leaf Execution Engine (`task-implementation`)**: Bounded worker execution engine invoked per task. Concurrent tasks in parallel batches execute within isolated Git worktrees, while strictly sequential tasks execute directly in the main worktree without worktree allocation. It performs quality intake against the task context or plan, implements the code, verifies with test evidence, passes in-worktree review (`task_review`), records evidence, and halts without re-planning or scope creep.
 
 ```
                      +---------------------------------------+
@@ -72,26 +72,31 @@ Before provisioning worktrees, the orchestrator proposes a base branch name with
 
 The branch pattern is `{prefix}/{workflow-slug}` (e.g., `feat/parallel-subagents`). The user confirms the base branch name before worktree creation begins.
 
-### 3. Serial Worktree Provisioning
-To avoid Git index lock contention (`.git/index.lock`), worktrees are provisioned **serially** prior to launching parallel subagents:
+### 3. Sequential Steps vs Parallel Batches
+Worktree isolation is strictly reserved for tasks running concurrently in parallel:
+- **Strictly Sequential Tasks**: Tasks that have no concurrent peers (e.g. Task 1 before a parallel batch, or Task 5 after a parallel batch, or any single-task stage) execute directly in the main repository workspace with subagents on the base branch (or active branch). They bypass `herdr worktree create`, branch creation, and merge overhead.
+- **Parallel Batches**: When multiple tasks can be executed concurrently in parallel, worktrees are provisioned serially prior to launching worker subagents.
+
+### 4. Serial Worktree Provisioning
+To avoid Git index lock contention (`.git/index.lock`), worktrees for parallel batches are provisioned **serially** prior to launching parallel subagents:
 ```bash
 herdr worktree create --cwd "$PWD" --branch "{base-branch}/{task-slug}" --label "{task-slug}" --no-focus
 ```
 
-### 4. Parallel Worker Isolation & Multi-Child Tracking
-- Each task worker runs as a dedicated subagent with its current working directory (`cwd`) pointing to its isolated worktree.
+### 5. Parallel Worker Isolation & Multi-Child Tracking
+- Each parallel task worker runs as a dedicated subagent with its current working directory (`cwd`) pointing to its isolated worktree. Sequential task workers run with `cwd` pointing to the main workspace.
 - Child runs use distinct run IDs: `task-implementation-{task-slug}`.
 - SQLite connections configure `PRAGMA busy_timeout = 5000;` to smoothly queue concurrent transaction writes without database lock errors.
-- The `invocations` table tracks active children with columns: `task_slug`, `child_run_id`, `worktree`, and `branch`.
+- The `invocations` table tracks active children with columns: `task_slug`, `child_run_id`, `worktree`, and `branch` (`worktree` and `branch` are null for sequential tasks executed in the main worktree).
 
-### 5. Pipelined In-Worktree Review Loops
+### 6. Pipelined In-Worktree Review Loops
 Each child `task-implementation` run includes a `task_review` state:
 - Delegated to `subagent: reviewer`.
-- The reviewer inspects the task diff within the isolated worktree.
+- The reviewer inspects the task diff within the isolated worktree (or main worktree for sequential steps).
 - If issues or defects are found, a remediation loop transitions back to `implement` (`max_retries: 2`).
 - The task only reaches `done` after both verification and in-worktree review pass.
 
-### 6. Integration Barrier & Worktree Cleanup
+### 7. Integration Barrier & Worktree Cleanup
 When all tasks in a batch complete:
 1. The parent workflow reaches its integration barrier (e.g. `integration` state).
 2. The orchestrator sequentially merges task branches into `{base-branch}` via `git merge --no-ff`. If a merge conflict occurs, the merge is aborted and remediation returns to the task worktree.
@@ -101,7 +106,7 @@ When all tasks in a batch complete:
    herdr worktree remove --workspace "{workspace-id}" --force
    ```
 
-### 7. Concurrency Ceilings
+### 8. Concurrency Ceilings
 - Workflow definitions support a `concurrency` ceiling attribute at the workflow root or state level (defaults to 3; must be a positive integer >= 1).
 - User prompt instructions can override the concurrency ceiling for a given run (e.g., specifying concurrency of 2 or 5).
 
@@ -123,10 +128,10 @@ states:
 ```
 
 
-### 8. Strict Safety Boundaries
+### 9. Strict Safety Boundaries
 - All operations are strictly local.
 - Zero Git branches or commits are pushed to remote origins during the worktree lifecycle.
 - Subagents never share a working directory or Git index during parallel execution.
 
-### 9. Known Limitations
+### 10. Known Limitations
 - **Multiplexer Surface Placement**: When the orchestrator provisions a worktree via `herdr worktree create`, Herdr creates both an isolated Git worktree on disk and an associated Herdr workspace. However, when worker or reviewer subagents are launched via the `subagent` tool with `cwd` pointing to the worktree path, their terminal surfaces (tabs or split panes) are allocated within the orchestrator's active Herdr workspace rather than inside the workspace provisioned for that worktree. Subagents correctly execute inside the isolated worktree filesystem and branch (`cwd`), but their terminal surfaces remain in the main workspace alongside the orchestrator.

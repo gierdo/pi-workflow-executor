@@ -234,6 +234,7 @@ When running in Herdr terminal multiplexer environments (`HERDR_ENV=1`), `pi-wor
 - **Pipelined In-Worktree Review**: Each child `task-implementation` sub-workflow includes a dedicated `task_review` state with a reviewer subagent inspecting code within the worktree before reporting done.
 - **Integration Barrier**: Completed task branches are sequentially merged into the base branch (`{base-branch}/{task-slug}`) and verified before batch cleanup with `herdr worktree remove`.
 - **Automatic Fallback**: Outside Herdr, workflows run tasks sequentially in the main workspace.
+- **Known Limitation**: Subagents spawned with `cwd` set to a worktree execute inside the worktree filesystem and branch, but their multiplexer terminal surfaces (tabs or split panes) are created within the orchestrator's main workspace rather than inside the worktree's Herdr workspace.
 
 See [Parallel Execution Documentation](docs/parallel-execution.md) for architecture details, concurrency limits, and configuration.
 

@@ -127,3 +127,6 @@ states:
 - All operations are strictly local.
 - Zero Git branches or commits are pushed to remote origins during the worktree lifecycle.
 - Subagents never share a working directory or Git index during parallel execution.
+
+### 9. Known Limitations
+- **Multiplexer Surface Placement**: When the orchestrator provisions a worktree via `herdr worktree create`, Herdr creates both an isolated Git worktree on disk and an associated Herdr workspace. However, when worker or reviewer subagents are launched via the `subagent` tool with `cwd` pointing to the worktree path, their terminal surfaces (tabs or split panes) are allocated within the orchestrator's active Herdr workspace rather than inside the workspace provisioned for that worktree. Subagents correctly execute inside the isolated worktree filesystem and branch (`cwd`), but their terminal surfaces remain in the main workspace alongside the orchestrator.

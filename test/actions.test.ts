@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { initDatabase, createRun, completeRun, getRun } from "../runner/db.ts";
+import { initDatabase, createRun, completeRun, pauseRun, getRun } from "../runner/db.ts";
 import { removeWorkflowRun } from "../tui/actions.ts";
 
 test("removeWorkflowRun removes DB records and disk journal directory", () => {
@@ -52,11 +52,12 @@ test("removeWorkflowRun succeeds if journal directory does not exist", () => {
   assert.equal(getRun(db, "test-run-2"), null);
 });
 
-test("removeWorkflowRun throws on active run and preserves journal folder", () => {
+test("removeWorkflowRun removes active run and disk journal directory", () => {
   const db = initDatabase(":memory:");
   const testDir = join(tmpdir(), `pi-test-active-${Date.now()}`);
   const journalDir = join(testDir, ".workflow", "runs", "test-wf", "active-task");
   mkdirSync(journalDir, { recursive: true });
+  writeFileSync(join(journalDir, "workflow-log.md"), "# Active Log");
 
   const run = createRun(db, {
     id: "test-run-active",
@@ -66,10 +67,29 @@ test("removeWorkflowRun throws on active run and preserves journal folder", () =
     definitionFingerprint: "fp1",
   });
 
-  assert.throws(
-    () => removeWorkflowRun(db, run, testDir),
-    /Cannot delete run in 'active' state/
-  );
-  assert.ok(getRun(db, "test-run-active"));
-  assert.ok(existsSync(journalDir));
+  removeWorkflowRun(db, run, testDir);
+  assert.equal(getRun(db, "test-run-active"), null);
+  assert.equal(existsSync(journalDir), false);
+});
+
+test("removeWorkflowRun removes paused run and disk journal directory", () => {
+  const db = initDatabase(":memory:");
+  const testDir = join(tmpdir(), `pi-test-paused-${Date.now()}`);
+  const journalDir = join(testDir, ".workflow", "runs", "test-wf", "paused-task");
+  mkdirSync(journalDir, { recursive: true });
+  writeFileSync(join(journalDir, "workflow-log.md"), "# Paused Log");
+
+  const run = createRun(db, {
+    id: "test-run-paused",
+    task: "paused-task",
+    workflow: "test-wf",
+    initialState: "start",
+    definitionFingerprint: "fp1",
+  });
+  pauseRun(db, "test-run-paused", 1, "user input needed");
+  const pausedRun = getRun(db, "test-run-paused")!;
+
+  removeWorkflowRun(db, pausedRun, testDir);
+  assert.equal(getRun(db, "test-run-paused"), null);
+  assert.equal(existsSync(journalDir), false);
 });

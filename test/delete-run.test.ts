@@ -101,7 +101,7 @@ test("deleteRun removes aborted run successfully", () => {
   assert.equal(getRun(db, "run-abort"), null);
 });
 
-test("deleteRun guards: cannot delete active run", () => {
+test("deleteRun removes active run successfully", () => {
   const db = initDatabase(":memory:");
   createRun(db, {
     id: "run-act",
@@ -110,15 +110,26 @@ test("deleteRun guards: cannot delete active run", () => {
     initialState: "start",
     definitionFingerprint: "fp1",
   });
+  executeTransition(db, {
+    runId: "run-act",
+    expectedRevision: 1,
+    toState: "middle",
+  });
 
-  assert.throws(
-    () => deleteRun(db, "run-act"),
-    /Cannot delete run in 'active' state/
+  assert.equal(getRun(db, "run-act")?.status, "active");
+  deleteRun(db, "run-act");
+  assert.equal(getRun(db, "run-act"), null);
+  assert.equal(
+    (db.prepare("SELECT COUNT(*) as count FROM state_visits WHERE run_id = 'run-act'").get() as any).count,
+    0
   );
-  assert.ok(getRun(db, "run-act"));
+  assert.equal(
+    (db.prepare("SELECT COUNT(*) as count FROM transitions WHERE run_id = 'run-act'").get() as any).count,
+    0
+  );
 });
 
-test("deleteRun guards: cannot delete paused run", () => {
+test("deleteRun removes paused run successfully", () => {
   const db = initDatabase(":memory:");
   createRun(db, {
     id: "run-pause",
@@ -129,11 +140,13 @@ test("deleteRun guards: cannot delete paused run", () => {
   });
   pauseRun(db, "run-pause", 1, "waiting for user input");
 
-  assert.throws(
-    () => deleteRun(db, "run-pause"),
-    /Cannot delete run in 'paused' state/
+  assert.equal(getRun(db, "run-pause")?.status, "paused");
+  deleteRun(db, "run-pause");
+  assert.equal(getRun(db, "run-pause"), null);
+  assert.equal(
+    (db.prepare("SELECT COUNT(*) as count FROM state_visits WHERE run_id = 'run-pause'").get() as any).count,
+    0
   );
-  assert.ok(getRun(db, "run-pause"));
 });
 
 test("deleteRun throws on nonexistent run", () => {

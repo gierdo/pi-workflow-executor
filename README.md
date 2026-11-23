@@ -268,7 +268,7 @@ npx pi-workflow-tui
 - **Split-Pane Layout**: The left sidebar lists recorded workflow runs or defined workflow templates. The right pane renders a dynamic ASCII/Unicode graph with box-and-arrow topology (`╭───╮`, `│   │`, `╰───╯`, `──►`).
 - **Live State Highlighting**: Visited states are flagged with `✓`, and the current state is marked with `► [CURRENT]`.
 - **Template Browser**: Press `Tab` to switch between active runs and static workflow templates (project-local, user-global, or bundled).
-- **Safe Run Deletion**: Select any `[COMPLETED]` or `[ABORTED]` run and press `d` to open the confirmation modal. Press `y` to confirm deletion.
+- **Safe Run Deletion**: Select any run (active, paused, completed, or aborted) and press `d` to open the confirmation modal. Press `y` to confirm deletion.
 
 ### Keyboard Shortcuts
 
@@ -277,7 +277,7 @@ npx pi-workflow-tui
 | `Up` / `Down` or `k` / `j` | Navigate items in the list |
 | `PageUp` / `PageDown` or `[` / `]` | Scroll graph view vertically |
 | `Tab` | Toggle between Workflow Runs and Workflow Templates |
-| `d` | Delete selected completed or aborted run |
+| `d` | Delete selected run |
 | `y` / `n` | Confirm (`y`) or cancel (`n`) run deletion in modal |
 | `Esc` | Cancel deletion modal or dismiss status notices |
 | `r` | Refresh runs and workflow definitions from disk and database |
@@ -285,7 +285,7 @@ npx pi-workflow-tui
 
 ### Deletion Safety Invariants
 
-- **Active and Paused Runs Protected**: Runs currently in `active` or `paused` state cannot be deleted. You must complete or abort a run before deleting it.
+- **Runs of Any Status Deletable**: Active, paused, completed, or aborted workflow runs can be deleted.
 - **Transactional Foreign Key Cascade**: Run deletion executes inside an immediate SQLite transaction, cleaning up all child records (`external_actions`, `loop_counts`, `invocations`, `pending_approvals`, `transitions`, `state_visits`, and `runs`) and removing `.workflow/runs/<workflow>/<task>` from disk.
 
 ---

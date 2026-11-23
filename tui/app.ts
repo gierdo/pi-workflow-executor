@@ -250,10 +250,6 @@ export function App({ projectRoot = process.cwd() }: AppProps) {
         setStatusMessage("No run selected to delete.");
         return;
       }
-      if (selectedRun.status === "active" || selectedRun.status === "paused") {
-        setStatusMessage("Cannot delete an active or paused run. Complete or abort it first.");
-        return;
-      }
       setConfirmModalOpen(true);
       setStatusMessage(null);
       return;

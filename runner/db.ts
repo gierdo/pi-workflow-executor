@@ -364,9 +364,6 @@ export function deleteRun(db: DatabaseSync, runId: string): void {
     if (!run) {
       throw new Error(`Run '${runId}' not found`);
     }
-    if (run.status === "active" || run.status === "paused") {
-      throw new Error(`Cannot delete run in '${run.status}' state. Only completed or aborted runs can be deleted.`);
-    }
 
     db.prepare("DELETE FROM external_actions WHERE run_id = ?").run(runId);
     db.prepare("DELETE FROM loop_counts WHERE run_id = ?").run(runId);

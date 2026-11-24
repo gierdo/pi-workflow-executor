@@ -1,149 +1,110 @@
 name: debug
-version: 2
+version: 3
 description: >-
-  Take a bug report to a proven root cause, and stop there. Triage, reproduce,
-  and diagnose, ending in a written diagnosis (report, reproduction, root cause,
-  blast radius, fix approach). Never fixes anything. Runs standalone or as a
-  sub-workflow of bug-fix. On re-entry from a parent (`entry` plus a reason),
-  read the existing diagnosis and log, treat the reason as new evidence, and
-  revise the diagnosis in place instead of starting over.
-
-# Read-only with respect to product code. Reproduction tests and diagnostic
-# instrumentation are allowed; remove the instrumentation before leaving
-# (keep the failing reproduction test and record it).
+  Take a bug report to a proven root cause and stop there: triage -> reproduce ->
+  diagnose, producing `bugs/{task}/diagnosis.md`. Never modifies product code
+  permanently (failing reproduction tests are kept; temporary diagnostic
+  instrumentation must be removed before completion).
 
 inputs:
   task:
     description: "Kebab-case bug slug (e.g. login-500-on-empty-email)."
     required: true
   require_openspec:
-    description: >-
-      When true, triage confirms OpenSpec is usable (non-null root) because the
-      caller will create a change later. Otherwise OpenSpec specs are consulted
-      only if the project has them.
+    description: "When true, verify OpenSpec usability during triage."
     required: false
 
 artifacts:
   diagnosis:
     path: "bugs/{task}/diagnosis.md"
     description: >-
-      The durable output. Sections: Report (observed vs expected, environment,
-      exact trigger), Reproduction (smallest reliable steps/inputs, path of the
-      failing test), Root cause (with proving evidence), Blast radius, Fix
-      approach (addresses the cause, not the symptom), Revision history (one
-      line per re-entry: what was invalidated and why). Lives outside any
-      OpenSpec change because the change may not exist yet.
-  log:
-    path: "bugs/{task}/debug-log.md"
-    description: "Append-only state/transition log."
+      Durable diagnosis report with sections: Report (observed vs expected,
+      environment, trigger), Reproduction (minimal steps and failing test path),
+      Root cause (with proving evidence), Blast radius, Fix approach, and
+      Revision history (when re-entered from a parent workflow).
 
 initial: triage
 
 states:
   triage:
     goal: >-
-      Capture the bug precisely: observed vs expected behavior, environment,
-      exact trigger. Resolve ambiguity with the user rather than guessing.
-      Confirm it is a genuine defect (a gap between intended and actual
-      behavior), checking docs and existing specs as well as code. If
-      `require_openspec`, run the OpenSpec project check first. Thinking state:
-      write no code. Start `diagnosis.md` with the Report section.
+      Capture observed vs expected behavior, environment, and exact trigger.
+      Confirm against code, docs, and specs that the report describes a genuine
+      defect, resolving any ambiguity with the user. Write the Report section of
+      `bugs/{task}/diagnosis.md` (or update it on re-entry).
     produces: [diagnosis]
-    exit_gate: >-
-      Observed and expected behavior are stated, the trigger is concrete enough
-      to attempt reproduction, it is confirmed a genuine defect, and (if
-      `require_openspec`) OpenSpec has a usable root or the user has chosen how
-      to proceed.
+    exit_gate: "Observed vs expected behavior and trigger are recorded in diagnosis.md and confirmed as a defect."
     transitions:
       - outcome: not_a_defect
-        when: "The reported behavior is intended, or the user declines to pursue it."
+        when: "Behavior is intended or user declines to pursue."
         to: abort
         reason: "not a defect, or declined"
       - outcome: triaged
-        when: "exit_gate holds"
         to: reproduce
         reason: "captured clearly enough to reproduce"
 
   reproduce:
     goal: >-
-      Make the bug happen on demand. Reduce it to the smallest reliable
-      reproduction and, where the project allows, capture it as a failing
-      automated test. Do not attempt a fix. Record the reproduction in
-      `diagnosis.md`.
+      Reproduce the bug reliably on demand. Reduce it to minimal steps and,
+      where possible, capture it as a failing automated test. Record the
+      reproduction steps and test path in `diagnosis.md`. Do not fix the bug.
     consumes: [diagnosis]
     produces: [diagnosis]
-    exit_gate: >-
-      The bug reproduces reliably from the recorded steps (ideally via a test
-      failing for the reported reason), with no flakiness that would mask
-      whether a later fix worked.
+    exit_gate: "Bug reproduces deterministically from recorded steps/test in diagnosis.md."
     transitions:
       - outcome: report_contradicted
-        when: >-
-          Reproduction showed the report is wrong, incomplete, or describes
-          expected behavior.
+        when: "Reproduction showed the report is inaccurate or describes expected behavior."
         to: triage
         reason: "refinement: reproduction contradicted the report"
         max_retries: 2
       - outcome: cannot_reproduce
-        when: >-
-          It cannot be reproduced after sustained, varied effort, and the user
-          has been told what was tried and what is missing.
+        when: "Bug cannot be reproduced after varied attempts and user consultation."
         to: abort
         reason: "cannot reproduce"
       - outcome: reproduced
-        when: "exit_gate holds"
         to: diagnose
         reason: "reproduces reliably"
 
   diagnose:
     goal: >-
-      Find the true root cause, not a symptom. Trace from the reproduction to the
-      responsible code or behavior and gather evidence that proves it (e.g. the
-      failure disappears when the cause is neutralized and returns when
-      restored). Record root cause, evidence, blast radius, and fix approach in
-      `diagnosis.md`. Do not fix; instrumentation is fine but must be removed
-      before leaving. `openspec-explore` may help. On re-entry, add a Revision
-      history line.
+      Trace from the reproduction to the responsible code and prove the root
+      cause with evidence (e.g. neutralizing the cause stops the failure).
+      Record root cause, proving evidence, blast radius, and recommended fix
+      approach in `diagnosis.md`. Remove any diagnostic instrumentation before
+      exiting.
     consumes: [diagnosis]
     produces: [diagnosis]
     exit_gate: >-
-      The root cause is identified with evidence (not a hypothesis), the blast
-      radius is understood, a fix approach addressing the cause is chosen, all
-      are written in `diagnosis.md`, and no instrumentation remains in the tree.
+      Root cause is proven with evidence, blast radius and fix approach are
+      recorded in diagnosis.md, and all diagnostic instrumentation is removed.
     transitions:
       - outcome: sharper_repro_needed
-        when: >-
-          Diagnosis needs a better reproduction to isolate the cause (too broad,
-          flaky, or not exercising the suspected path).
+        when: "Current reproduction is too broad or flaky to isolate the root cause."
         to: reproduce
         reason: "refinement: needs a sharper reproduction"
         max_retries: 2
       - outcome: report_gap_found
-        when: "The report or expected behavior itself is wrong or only one facet of a broader defect."
+        when: "Diagnosis showed the reported expectation is wrong or part of a broader defect."
         to: triage
         reason: "refinement: deeper reporting gap"
         max_retries: 2
       - outcome: diagnosed
-        when: "exit_gate holds"
         to: done
-        reason: "root cause proven, fix approach chosen"
+        reason: "root cause proven and fix approach recorded"
 
   abort:
     terminal: true
-    goal: >-
-      Ended without a proven root cause (not a defect, declined, or not
-      reproducible). Record why, what was tried, and what would unblock it in
-      `diagnosis.md`, and tell the user. A parent must not plan a fix.
+    goal: "Ended without a proven root cause. Record what was tried and why in diagnosis.md."
 
   done:
     terminal: true
-    goal: "Reproducible, root-caused, fix approach chosen, all in `diagnosis.md`. No fix made."
+    goal: "Bug reproduced, root-caused with evidence, and fix approach recorded in diagnosis.md."
 
 herdr:
   suggested_panes:
     - role: repro
       lifecycle: persistent
-      purpose: "Reproduction test on a watcher for live red/green."
+      purpose: "Reproduction test watcher."
     - role: diagnose
       lifecycle: on-enter-diagnose
       purpose: "Instrumentation, debugger, or log tails."

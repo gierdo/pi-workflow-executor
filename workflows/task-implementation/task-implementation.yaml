@@ -1,203 +1,138 @@
 name: task-implementation
-version: 2
+version: 3
 description: >-
   Bounded leaf execution engine: implement a single pre-planned task from a
-  plan artifact or OpenSpec change and verify it, without re-planning or
-  expanding scope. Primarily invoked by parent orchestrators
-  (feature-implementation, bug-fix) or run directly for pre-planned tasks.
-  The invariant is bounded execution: the task arrives with examples,
-  references, and acceptance criteria already decided; this workflow
-  implements exactly that, proves it with evidence, and stops. A task that
-  lacks the context to be implemented is reported back, not guessed at.
-
-# Invariant: BOUNDED LEAF EXECUTION. The task arrives planned (approach,
-# examples, constraints, acceptance criteria) from a parent orchestrator
-# (feature-implementation, bug-fix) or standalone plan. Do not re-plan,
-# re-design, or widen scope: an under-specified task is handed back, and a wrong
-# plan loops to planning.
+  plan artifact or OpenSpec change, verify it mechanically, and optionally
+  review it in-worktree. Never re-plans or expands scope; under-specified or
+  infeasible tasks terminate in `blocked` for parent re-planning.
 
 inputs:
   task:
-    description: >-
-      Short kebab-case slug identifying this unit of implementation work
-      (e.g. add-pagination-handler). Namespaces this run's artifacts.
+    description: "Kebab-case slug identifying this unit of implementation work."
     required: true
+  parent_task:
+    description: "Optional parent feature/bug slug when invoked as a child workflow."
+    required: false
+  plan_path:
+    description: "Optional explicit path to plan.md or OpenSpec change root."
+    required: false
 
 artifacts:
   plan:
     path: ".workflow/plans/{task}/plan.md"
     description: >-
-      The plan this task belongs to, OWNED by the planning step upstream. It
-      holds the task description, its acceptance criteria, the Ideal State
-      Criteria (ISC), the constraints, and the code example or reference the
-      task must follow. Can be a standalone plan artifact
-      (`.workflow/plans/{task}/plan.md`) or OpenSpec change tasks
-      (`<changeRoot>/tasks.md` accompanied by delta specs in `<changeRoot>/specs/`).
-      This workflow reads it; it does not author it. The orchestrator may pass
-      a different plan path or change root in the task message; when it does,
-      read there.
+      Upstream plan or OpenSpec change (`<changeRoot>/tasks.md` + `specs/`).
+      When `plan_path` or `parent_task` is supplied by the parent orchestrator,
+      read from that location instead of `.workflow/plans/{task}/plan.md`.
   evidence:
     path: ".workflow/runs/task-implementation/{task}/implementation-evidence.md"
-    description: >-
-      The record of what was changed and the proof it works: files touched, the
-      verification commands run and their actual results, and which ISC items
-      were met with the evidence that shows it. "Should work" is not evidence;
-      command output, file paths, and test results are.
-  log:
-    path: ".workflow/runs/task-implementation/{task}/workflow-log.md"
-    description: >-
-      Append-only record of each state entry/exit and the transition taken,
-      with a one-line reason. The audit trail for loops and cross-session
-      resume.
+    description: "Files changed, verification commands run, actual output, and ISC criteria met."
 
 initial: intake
 
 states:
   intake:
     goal: >-
-      Read the task and confirm it can actually be implemented before touching
-      code. Explicitly accepts and validates either an OpenSpec change task
-      context (`<changeRoot>/tasks.md` and delta specs) or a standalone
-      `plan.md` artifact (`.workflow/plans/{task}/plan.md`). Everything needed
-      is in the task message and the plan or OpenSpec change it references:
-      what to implement, the acceptance criteria, and the ISC. Verify the task
-      carries a code example or snippet (imports, patterns, structure) OR an
-      explicit reference to existing code to extrapolate from, AND explicit
-      constraints (libraries to use, patterns to follow, anti-patterns to
-      avoid). This is quality control, not optional.
+      Read the assigned task from `plan_path`, `<changeRoot>/tasks.md`, or
+      `.workflow/plans/{parent_task|task}/plan.md`. Confirm it includes target
+      files, a code example or existing-code reference, explicit constraints,
+      and testable acceptance criteria. If running in an isolated git worktree
+      whose dependencies (e.g. `node_modules`) are missing, link or install them
+      before proceeding.
     consumes: [plan]
     exit_gate: >-
-      The task is understood from either an OpenSpec change task context or a
-      standalone plan.md artifact, and it carries either a code example or a
-      concrete reference to existing code, plus explicit constraints - enough
-      to implement without guessing.
+      Task specification is complete (files, example/reference, constraints,
+      acceptance criteria) and the workspace environment is ready to build/test.
     transitions:
       - outcome: under_specified
-        when: >-
-          The task is missing its examples/references or its constraints, so
-          implementing it would mean guessing and building the wrong thing.
+        when: "Task is missing examples/references, constraints, or acceptance criteria."
         to: blocked
-        reason: "task under-specified: report back rather than guess"
+        reason: "task under-specified: return to planner rather than guess"
       - outcome: context_ready
-        when: "exit_gate holds"
         to: implement
-        reason: "the task has the context to be implemented"
+        reason: "task specification and environment ready"
 
   implement:
     goal: >-
-      Implement exactly the task. Follow the existing patterns the example or
-      reference points to, keep changes minimal and focused on this task, and
-      test as you go. Do not redesign, re-plan, or expand scope beyond what the
-      task and plan specify. If the task proves wrong or infeasible, loop rather
-      than improvising a different approach.
+      Implement only the assigned task following the referenced patterns and
+      constraints. Keep changes scoped to the task's target files so parallel
+      worktrees do not collide. If implementation proves the plan wrong or
+      infeasible, transition to `blocked`.
     subagent: worker
     consumes: [plan]
-    exit_gate: >-
-      The task's code is written, it follows the referenced patterns and stated
-      constraints, the scope is exactly the task (no unrequested extras), and
-      the build compiles.
+    exit_gate: "Task code is written within scope and compiles cleanly."
     transitions:
       - outcome: plan_invalidated
-        when: >-
-          Implementing revealed the task or the plan it rests on is wrong,
-          infeasible, or incomplete - the fix is to the plan, not to this code.
+        when: "Implementation proved the task or plan infeasible or wrong."
         to: blocked
-        reason: "plan invalidated: hand back to planning rather than improvise"
+        reason: "plan invalidated: hand back to parent planning"
       - outcome: implemented
-        when: "exit_gate holds"
         to: verify
-        reason: "the task is implemented; prove it works"
+        reason: "task implemented; run verification"
 
   verify:
     goal: >-
-      Prove the task works, do not assume it. Run the project's build/compile
-      step and the relevant tests (discover the real commands from the project's
-      config, not by assumption); a clean exit is not proof, so check the result
-      against what the task asked. Check for regressions. For
-      integration/framework changes (new hooks, decorators, state management,
-      API changes) run the thing - start the dev server and hit the endpoint or
-      load the page, because type checks pass while runtime still crashes.
-      Verify each relevant ISC item with evidence and record it. Clean up any
-      temporary files created.
+      Run the project's build and relevant tests (and exercise runtime endpoints
+      for integration/framework changes). Record commands, outputs, and met
+      acceptance criteria in the evidence artifact. Clean up temporary files.
     consumes: [plan]
     produces: [evidence]
     exit_gate: >-
-      The build and relevant tests were run and pass, integration/framework
-      changes were exercised at runtime, each relevant ISC item is confirmed
-      with concrete evidence (command output, file path, test result), no
-      regressions were introduced, and temporary files are cleaned up.
+      Build and relevant tests pass, acceptance criteria are verified with
+      recorded evidence, and temporary files are removed.
     transitions:
       - outcome: verification_failed
-        when: >-
-          Verification failed - a check errored, a test failed, a regression
-          appeared, or an ISC item is not met - and the fix is in this task's
-          code.
+        when: "Build, test, or acceptance check failed due to a defect in this task's code."
         to: implement
-        reason: "verification failed; fix the implementation"
+        reason: "verification failed; fix implementation"
         max_retries: 2
       - outcome: cannot_verify
-        when: >-
-          Verification cannot be run at all (build or tests will not execute in
-          this environment) so the task cannot be proven done here.
+        when: "Build or tests cannot execute in this environment."
         to: blocked
-        reason: "cannot verify: surface the blocker rather than assume done"
+        reason: "cannot verify in environment: surface blocker"
       - outcome: verified
-        when: "exit_gate holds"
         to: task_review
-        reason: "the task is implemented and proven; proceed to in-worktree review"
+        reason: "verified with evidence; proceed to review"
 
   task_review:
     goal: >-
-      Perform behavioral code review on this task diff within the isolated
-      worktree (or main worktree for sequential tasks). Check that the code matches the plan, meets quality and
-      correctness criteria, and introduces no defects or security risks.
+      Check the task diff for correctness, security, and adherence to the plan's
+      constraints. When invoked inside a parent workflow that performs an
+      integrated behavioral review (`feature-implementation`), keep this check
+      focused on task-local invariants and file-scope discipline.
     subagent: reviewer
-    exit_gate: >-
-      The code meets quality and correctness criteria with no unaddressed
-      defects.
+    exit_gate: "Task diff meets correctness, security, and scope criteria."
     transitions:
       - outcome: review_defects_found
-        when: "Reviewer flags code quality, security, or correctness issues"
+        when: "Reviewer flags code quality, security, or correctness issues."
         to: implement
         reason: "remediation: fix review defects within task worktree"
         max_retries: 2
       - outcome: review_passed
-        when: "exit_gate holds"
         to: report
-        reason: "review passed: proceed to final report"
+        reason: "review passed; finalize report"
 
   report:
     goal: >-
-      Summarize what changed, the verification evidence (commands run and their
-      actual results), and the ISC items met, and record it in the evidence
-      artifact. Report clearly and exit. Do not paper over anything the
-      verification left open.
+      Finalize the evidence artifact with changed files, verification outputs,
+      and any caveats, then report completion.
     consumes: [evidence]
-    exit_gate: >-
-      The change, the verification evidence, and the ISC items met are recorded
-      and reported, with any remaining caveat stated plainly rather than hidden.
+    exit_gate: "Evidence artifact is complete and reported."
     transitions:
       - outcome: reported
-        when: "exit_gate holds"
         to: done
-        reason: "the task is delivered with evidence"
+        reason: "task delivered with evidence"
 
   blocked:
     terminal: true
-    goal: >-
-      Stopped and handed back: the task is under-specified, the plan it rests on
-      is wrong, or verification cannot be run in this environment. Report exactly
-      what is missing or wrong so the planning step can provide the context or
-      fix the plan and re-assign. This is quality control, not failure.
+    goal: "Halted: report the exact missing context, plan flaw, or verification blocker to the caller."
 
   done:
     terminal: true
-    goal: >-
-      The task is implemented exactly as planned, verified with evidence, and
-      reported.
+    goal: "Task implemented, verified, reviewed, and reported with evidence."
 
 herdr:
   suggested_panes:
     - role: verify
       lifecycle: persistent
-      purpose: "Live build/test status for the implement and verify gates."
+      purpose: "Live build/test status for implement and verify gates."

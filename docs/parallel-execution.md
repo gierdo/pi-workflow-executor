@@ -63,19 +63,19 @@ Parallel task execution operates on a two-tier hierarchy distinguishing lifecycl
 - **Inside Herdr**: When `process.env.HERDR_ENV === "1"`, parallel execution is enabled.
 - **Outside Herdr**: Workflows fall back to sequential task execution in the project root workspace.
 
-### 2. Base Branch Proposal & Naming
-Before provisioning worktrees, the orchestrator proposes a base branch name with an appropriate prefix based on the workflow category:
+### 2. Base Branch Naming
+For parallel wave batches, the orchestrator uses a base branch with an appropriate prefix based on the workflow category:
 - `feat/`: for feature implementation workflows
 - `fix/`: for bug-fix workflows
 - `perf/`: for performance optimization
 - `refactor/`: for code refactoring
 
-The branch pattern is `{prefix}/{workflow-slug}` (e.g., `feat/parallel-subagents`). The user confirms the base branch name before worktree creation begins.
+The branch pattern is `{prefix}/{workflow-slug}` (e.g., `feat/parallel-subagents`), or the active feature branch if already on one.
 
-### 3. Sequential Steps vs Parallel Batches
-Worktree isolation is strictly reserved for tasks running concurrently in parallel:
-- **Strictly Sequential Tasks**: Tasks that have no concurrent peers (e.g. Task 1 before a parallel batch, or Task 5 after a parallel batch, or any single-task stage) execute directly in the main repository workspace with subagents on the base branch (or active branch). They bypass `herdr worktree create`, branch creation, and merge overhead.
-- **Parallel Batches**: When multiple tasks can be executed concurrently in parallel, worktrees are provisioned serially prior to launching worker subagents.
+### 3. Sequential Waves vs Parallel Wave Batches
+Worktree isolation is strictly reserved for tasks running concurrently in parallel within a wave:
+- **Strictly Sequential Tasks (`[sequential]`)**: Single-task waves or tasks with no concurrent peers (e.g. Wave 1 foundation before a parallel wave, or Wave 3 integration after a parallel wave) execute directly in the main repository workspace with subagents on the base branch. They bypass `herdr worktree create`, branch creation, and merge overhead.
+- **Parallel Wave Batches (`[parallel]`)**: When a wave contains multiple independent tasks partitioned across disjoint files/modules, worktrees are provisioned serially prior to launching parallel worker subagents.
 
 ### 4. Serial Worktree Provisioning
 To avoid Git index lock contention (`.git/index.lock`), worktrees for parallel batches are provisioned **serially** prior to launching parallel subagents:
@@ -96,15 +96,14 @@ Each child `task-implementation` run includes a `task_review` state:
 - If issues or defects are found, a remediation loop transitions back to `implement` (`max_retries: 2`).
 - The task only reaches `done` after both verification and in-worktree review pass.
 
-### 7. Integration Barrier & Worktree Cleanup
-When all tasks in a batch complete:
-1. The parent workflow reaches its integration barrier (e.g. `integration` state).
-2. The orchestrator sequentially merges task branches into `{base-branch}` via `git merge --no-ff`. If a merge conflict occurs, the merge is aborted and remediation returns to the task worktree.
-3. Full integration tests are executed across the merged workspace.
-4. Once integration verification passes, temporary worktrees are cleaned up:
+### 7. Wave Merge Barrier & Worktree Cleanup
+When all tasks in a parallel wave complete:
+1. The orchestrator sequentially merges each task branch (`{base-branch}/{task-slug}`) into `{base-branch}` via `git merge --no-ff`. If a merge conflict occurs, the merge is aborted and remediation returns to the task worktree.
+2. Once merged cleanly, the wave's temporary worktrees are removed before starting the next wave or entering `verification` and `review`:
    ```bash
    herdr worktree remove --workspace "{workspace-id}" --force
    ```
+3. After all waves are merged into `{base-branch}`, `verification` and `review` evaluate the complete, integrated feature diff on `{base-branch}`, followed by final landing/archival in `integration`.
 
 ### 8. Concurrency Ceilings
 - Workflow definitions support a `concurrency` ceiling attribute at the workflow root or state level (defaults to 3; must be a positive integer >= 1).

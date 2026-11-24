@@ -92,7 +92,6 @@ test("Scenario: code-reconnaissance reaches done and abort", () => {
   const db1 = initDatabase(":memory:");
   const runDone = advanceThrough(db1, def, rawYaml, "cr-done", [
     { outcome: "questions_framed" },
-    { outcome: "territory_mapped" },
     { outcome: "code_understood" },
     { outcome: "report_delivered" },
   ]);
@@ -198,23 +197,28 @@ test("Scenario: feature-implementation handles child task-implementation blocked
   assert.equal(run.current_state, "done");
 });
 
-test("Scenario: planning reaches done with consent gates", () => {
+test("Scenario: planning reaches done with consent gates and supports revision fast-track", () => {
   const { def, rawYaml } = loadWorkflow("planning");
 
   const db = initDatabase(":memory:");
   const run = advanceThrough(db, def, rawYaml, "ip-done", [
     { outcome: "oriented" },
-    { outcome: "intent_confirmed", approve: true },
-    { outcome: "requirements_confirmed", approve: true },
-    { outcome: "isc_confirmed", approve: true },
-    { outcome: "approach_selected", approve: true },
-    { outcome: "design_validated", approve: true },
-    { outcome: "risks_resolved", approve: true },
+    { outcome: "clarified", approve: true },
+    { outcome: "design_approved", approve: true },
     { outcome: "plan_approved", approve: true },
     { outcome: "tasks_approved", approve: true },
   ]);
   assert.equal(run.status, "completed");
   assert.equal(run.current_state, "done");
+
+  const dbRev = initDatabase(":memory:");
+  const runRev = advanceThrough(dbRev, def, rawYaml, "ip-rev", [
+    { outcome: "revision_ready" },
+    { outcome: "plan_approved", approve: true },
+    { outcome: "tasks_approved", approve: true },
+  ]);
+  assert.equal(runRev.status, "completed");
+  assert.equal(runRev.current_state, "done");
 });
 
 test("Scenario: merge-review reaches done with approval", () => {

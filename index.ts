@@ -5,9 +5,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as runner from "./runner/index.ts";
 import { resolveWorkflow, listWorkflows } from "./resolver.ts";
 import { slugify, parseWorkflowInvocation } from "./slug.ts";
-import { isHerdrActive, notifyHerdr, withHerdrBlocked } from "./herdr.ts";
+import { isHerdrActive, notifyHerdr, withHerdrBlocked, createHerdrWorktree, removeHerdrWorktree } from "./herdr.ts";
 
-export { slugify, parseWorkflowInvocation, isHerdrActive, notifyHerdr, withHerdrBlocked };
+export { slugify, parseWorkflowInvocation, isHerdrActive, notifyHerdr, withHerdrBlocked, createHerdrWorktree, removeHerdrWorktree };
 
 const require = createRequire(import.meta.url);
 const homeDir = process.env.HOME || "";
@@ -81,15 +81,16 @@ function buildWorkflowPrompt(run: any, workflowPath: string, instructions?: stri
     "5. **Sub-workflows**: When a state defines `invoke:`, run the child workflow. Upon reaching a terminal state, match the child outcome to the parent's transitions and call `workflow_transition`.",
     "6. **OpenSpec Conventions**: If the workflow integrates with OpenSpec (`bug-fix`, `feature-implementation`), `{task}` is the change name. Drive dedicated `openspec-*` skills and resolve paths using `openspec status --change \"${run.task}\" --json`.",
     "7. **Terminal State**: When reaching a state with `terminal: true`, the workflow is complete. Report final results and output artifact locations.",
-    "8. **Parallel Execution & Herdr Worktrees**:",
-    "   - Parallel execution is ONLY permitted when HERDR_ENV=1. If not running in Herdr, execute tasks sequentially in the main workspace.",
+    "8. **Parallel Execution & Worktrunk Worktrees**:",
+    "   - Parallel execution is ONLY permitted when HERDR_ENV=1 and Worktrunk (`wt`) is available. If not running in Herdr, execute tasks sequentially in the main workspace.",
+    "   - Follow the `using-git-worktrees` skill as the single definition for worktree lifecycle management.",
     "   - Only concurrent parallel tasks allocate worktrees. Strictly sequential steps (single-task waves or steps with no concurrent peers) execute directly with subagents in the main worktree on the base branch (or active branch) without provisioning temporary worktrees or separate branches.",
     "   - For parallel wave batches (concurrency ceiling default: 3, overridable by user prompt):",
-    "     a. Use `{prefix}/{workflow-slug}` as the base branch (prefix by workflow kind: `feat/`, `fix/`, `perf/`, `refactor/`), or current feature branch.",
-    "     b. Serially provision worktrees using `herdr worktree create` with branch `{base-branch}/{task-slug}`.",
-    "     c. Launch worker subagents in parallel with `cwd` pointing to their respective worktrees and distinct child runIds.",
+    "     a. Use `{prefix}/{workflow-slug}` as the base branch (prefix by workflow kind: `feat/`, `fix/`, `perf/`, `refactor/`), or current feature branch. Name each task branch `{base-branch}-{task-slug}` so Git branch ref paths do not collide with `{base-branch}`.",
+    "     b. Serially provision worktrees with Worktrunk (`wt switch --create \"{base-branch}-{task-slug}\" --base \"{base-branch}\" --no-cd --format=json -y`) and open each in Herdr (`herdr worktree open --cwd \"$PWD\" --path \"<wt-path>\" --label \"{task-slug}\" --no-focus --json`).",
+    "     c. Launch worker subagents in parallel with `cwd` pointing to their respective worktree paths (and `workspace` set to the opened Herdr workspace ID) and distinct child runIds.",
     "     d. Each child executes `task-implementation` (passing `parent_task` and `plan_path`).",
-    "     e. When all tasks in a parallel wave finish, sequentially merge each task branch (`git merge --no-ff`) into `{base-branch}` and clean up the wave's worktrees via `herdr worktree remove` before starting the next wave or proceeding to `verification` / `review`.",
+    "     e. When all tasks in a parallel wave finish, sequentially merge and clean up each task worktree via Worktrunk (`wt merge \"{base-branch}\" -C \"<wt-path>\" --no-remove -y`, then `wt remove --foreground -C \"$PWD\" \"{base-branch}-{task-slug}\" -y` and `herdr workspace close \"<workspace-id>\"`) before starting the next wave or proceeding to `verification` / `review`.",
     "   - Strict Safety: NEVER push temporary task branches or worktree branches to remote origins.",
   ];
 

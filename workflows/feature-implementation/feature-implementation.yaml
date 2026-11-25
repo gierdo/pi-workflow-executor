@@ -76,11 +76,12 @@ states:
       - Single-task waves (or any run outside Herdr, HERDR_ENV!=1) execute
         directly in the main worktree on the base branch without creating worktrees.
       - Multi-task parallel waves in Herdr (HERDR_ENV=1) serially provision
-        worktrees ({base-branch}/{task-slug}) up to the concurrency ceiling
-        (default 3), run worker subagents in parallel, and upon wave completion
-        sequentially merge each task branch (`git merge --no-ff`) into the base
-        branch and remove the wave's worktrees (`herdr worktree remove`) before
-        starting the next wave.
+        Worktrunk worktrees ({base-branch}-{task-slug} via `wt switch --create`
+        + `herdr worktree open`) up to the concurrency ceiling (default 3), run
+        worker subagents in parallel, and upon wave completion sequentially
+        merge and remove each task worktree via Worktrunk (`wt merge --no-remove`,
+        `wt remove --foreground`, and `herdr workspace close` per the
+        `using-git-worktrees` skill) before starting the next wave.
       If any child ends in `blocked`, transition to planning_revision.
     consumes: [proposal, specs_delta, design, tasks, plan]
     produces: [tasks, plan]

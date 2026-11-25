@@ -103,7 +103,6 @@ function buildWorkflowPrompt(run: any, workflowPath: string, instructions?: stri
     "7. **Terminal State**: When reaching a state with `terminal: true`, the workflow is complete. Report final results and output artifact locations.",
     "8. **Parallel Execution & Worktrunk Worktrees**:",
     "   - Parallel execution is ONLY permitted when HERDR_ENV=1 and Worktrunk (`wt`) is available. If not running in Herdr, execute tasks sequentially in the main workspace.",
-    "   - Follow the `using-git-worktrees` skill as the single definition for worktree lifecycle management.",
     "   - Only concurrent parallel tasks allocate worktrees. Strictly sequential steps (single-task waves or steps with no concurrent peers) execute directly with subagents in the main worktree on the base branch (or active branch) without provisioning temporary worktrees or separate branches.",
     "   - For parallel wave batches (concurrency ceiling default: 3, overridable by user prompt):",
     "     a. Use `{prefix}/{workflow-slug}` as the base branch (prefix by workflow kind: `feat/`, `fix/`, `perf/`, `refactor/`), or current feature branch. Name each task branch `{base-branch}-{task-slug}` so Git branch ref paths do not collide with `{base-branch}`.",

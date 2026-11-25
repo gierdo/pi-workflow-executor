@@ -80,8 +80,8 @@ states:
         + `herdr worktree open`) up to the concurrency ceiling (default 3), run
         worker subagents in parallel, and upon wave completion sequentially
         merge and remove each task worktree via Worktrunk (`wt merge --no-remove`,
-        `wt remove --foreground`, and `herdr workspace close` per the
-        `using-git-worktrees` skill) before starting the next wave.
+        `wt remove --foreground`, and `herdr workspace close`) before starting
+        the next wave.
       If any child ends in `blocked`, transition to planning_revision.
     consumes: [proposal, specs_delta, design, tasks, plan]
     produces: [tasks, plan]

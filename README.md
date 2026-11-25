@@ -226,16 +226,16 @@ When running inside a Herdr workspace (`HERDR_ENV=1`), approval gates emit `herd
 
 ---
 
-## Parallel Execution with Herdr Worktrees
+## Parallel Execution with Worktrunk and Herdr Worktrees
 
-When running in Herdr terminal multiplexer environments (`HERDR_ENV=1`), `pi-workflow-executor` can execute implementation tasks concurrently in isolated Git worktrees:
+When running in Herdr terminal multiplexer environments (`HERDR_ENV=1`) with [Worktrunk (`wt`)](https://worktrunk.dev/) available, `pi-workflow-executor` can execute implementation tasks concurrently in isolated Git worktrees:
 
-- **Isolated Worktrees for Concurrent Tasks**: Tasks in parallel batches execute in separate Git worktrees created serially via `herdr worktree create`, preventing file collisions and cache pollution.
+- **Isolated Worktrees for Concurrent Tasks**: Tasks in parallel batches execute in separate Git worktrees provisioned serially via Worktrunk (`wt switch --create "{base-branch}-{task-slug}" --base "{base-branch}" --no-cd --format=json -y`, running configured Worktrunk hooks and using `{base-branch}-{task-slug}` so Git branch ref files do not collide with `{base-branch}`) and registered as Herdr workspaces via `herdr worktree open --no-focus`, preventing file collisions and cache pollution.
 - **Main Worktree for Sequential Tasks**: Strictly sequential tasks (single-task stages or steps with no concurrent peers) run directly with subagents in the main worktree on the base branch, skipping worktree provisioning and branch merging overhead.
 - **Pipelined In-Worktree Review**: Each child `task-implementation` sub-workflow includes a dedicated `task_review` state with a reviewer subagent inspecting code within the worktree (or main worktree) before reporting done.
-- **Integration Barrier**: Completed task branches are sequentially merged into the base branch (`{base-branch}/{task-slug}`) and verified before batch cleanup with `herdr worktree remove`.
-- **Automatic Fallback**: Outside Herdr, workflows run tasks sequentially in the main workspace.
-- **Known Limitation**: Subagents spawned with `cwd` set to a worktree execute inside the worktree filesystem and branch, but their multiplexer terminal surfaces (tabs or split panes) are created within the orchestrator's main workspace rather than inside the worktree's Herdr workspace.
+- **Integration Barrier**: Completed task branches (`{base-branch}-{task-slug}`) are sequentially merged into the base branch via `wt merge "{base-branch}" -C "<worktree-path>" --no-remove -y` and verified before synchronous cleanup with `wt remove --foreground` and `herdr workspace close`.
+- **Automatic Fallback**: Outside Herdr (or when `wt` is unavailable), workflows run tasks sequentially in the main workspace.
+- **Worktree Workspace Surface Placement**: Opening each worktree via `herdr worktree open` registers a dedicated Herdr workspace for that checkout, allowing `pi-herdr-subagents` to place worker and reviewer subagent tabs directly inside the worktree's Herdr workspace.
 
 See [Parallel Execution Documentation](docs/parallel-execution.md) for architecture details, concurrency limits, and configuration.
 

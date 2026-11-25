@@ -63,34 +63,121 @@ export async function withHerdrBlocked<T>(
 }
 
 /**
- * Creates a Git worktree via Herdr CLI.
+ * Returns the Worktrunk binary name or path, honoring `WORKTRUNK_BIN`.
+ */
+export function getWorktrunkBin(): string {
+  return process.env.WORKTRUNK_BIN || "wt";
+}
+
+/**
+ * Checks whether the Worktrunk (`wt`) CLI is available in the current environment.
+ */
+export function isWorktrunkAvailable(): boolean {
+  try {
+    herdrOps.execSync(`${getWorktrunkBin()} --version`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Creates a Git worktree via Worktrunk (`wt`) and registers it as a Herdr workspace.
  * Only allowed when running inside Herdr (HERDR_ENV=1).
  */
 export function createHerdrWorktree(params: {
   cwd: string;
   branch: string;
   label: string;
-}): { worktreePath: string; workspaceId?: string } {
+  baseBranch?: string;
+}): { worktreePath: string; workspaceId?: string; branch: string } {
   if (!isHerdrActive()) {
     throw new Error("Cannot create Herdr worktree outside a Herdr environment (HERDR_ENV!=1)");
   }
-  const output = herdrOps.execSync(
-    `herdr worktree create --cwd "${params.cwd}" --branch "${params.branch}" --label "${params.label}" --no-focus`,
-    { encoding: "utf8" }
+  const wtBin = getWorktrunkBin();
+  const baseArg = params.baseBranch ? ` --base "${params.baseBranch}"` : "";
+  const wtOut = herdrOps.execSync(
+    `${wtBin} switch --create "${params.branch}"${baseArg} --no-cd --format=json -y`,
+    { cwd: params.cwd, encoding: "utf8" }
   );
-  const parsed = JSON.parse(output.toString());
-  return {
-    worktreePath: parsed.result?.worktree?.path ?? parsed.worktree?.path ?? "",
-    workspaceId: parsed.result?.workspace?.id ?? parsed.workspace?.id,
-  };
+  const wtParsed = JSON.parse(wtOut.toString());
+  const worktreePath: string = wtParsed.path ?? wtParsed.result?.path ?? "";
+  const resolvedBranch: string = wtParsed.branch ?? params.branch;
+
+  const herdrOut = herdrOps.execSync(
+    `herdr worktree open --cwd "${params.cwd}" --path "${worktreePath}" --label "${params.label}" --no-focus --json`,
+    { cwd: params.cwd, encoding: "utf8" }
+  );
+  const herdrParsed = JSON.parse(herdrOut.toString());
+  const workspaceId: string | undefined =
+    herdrParsed.result?.workspace?.workspace_id ??
+    herdrParsed.result?.workspace?.id ??
+    herdrParsed.workspace?.workspace_id ??
+    herdrParsed.workspace?.id;
+
+  return { worktreePath, workspaceId, branch: resolvedBranch };
+}
+
+export interface RemoveHerdrWorktreeParams {
+  cwd?: string;
+  branch?: string;
+  workspaceId?: string;
+  force?: boolean;
 }
 
 /**
- * Removes a Herdr worktree workspace by ID.
+ * Removes a Worktrunk worktree (when `branch` is provided) and closes its Herdr workspace
+ * (when `workspaceId` is provided). Accepts a workspaceId string for backward compatibility.
  * Silently ignores removal if outside Herdr.
  */
-export function removeHerdrWorktree(workspaceId: string): void {
+export function removeHerdrWorktree(target: string | RemoveHerdrWorktreeParams): void {
   if (!isHerdrActive()) return;
-  herdrOps.execSync(`herdr worktree remove --workspace "${workspaceId}" --force`, { stdio: "ignore" });
+  const params: RemoveHerdrWorktreeParams =
+    typeof target === "string" ? { workspaceId: target } : target;
+
+  if (params.branch) {
+    const wtBin = getWorktrunkBin();
+    const cwdArg = params.cwd ? ` -C "${params.cwd}"` : "";
+    const forceArg = params.force ? " --force -D" : "";
+    herdrOps.execSync(
+      `${wtBin} remove --foreground${cwdArg} "${params.branch}"${forceArg} -y`,
+      { ...(params.cwd ? { cwd: params.cwd } : {}), stdio: "ignore" }
+    );
+  }
+
+  if (params.workspaceId) {
+    herdrOps.execSync(`herdr workspace close "${params.workspaceId}"`, { stdio: "ignore" });
+  }
+}
+
+export interface MergeHerdrWorktreeParams {
+  cwd: string;
+  worktreePath: string;
+  branch: string;
+  targetBranch?: string;
+  workspaceId?: string;
+  flags?: string[];
+}
+
+/**
+ * Merges a Worktrunk worktree into its target branch (`--no-remove`), then synchronously
+ * removes the worktree and closes its Herdr workspace.
+ */
+export function mergeHerdrWorktree(params: MergeHerdrWorktreeParams): void {
+  if (!isHerdrActive()) {
+    throw new Error("Cannot merge Herdr worktree outside a Herdr environment (HERDR_ENV!=1)");
+  }
+  const wtBin = getWorktrunkBin();
+  const targetArg = params.targetBranch ? ` "${params.targetBranch}"` : "";
+  const extraFlags = params.flags?.length ? ` ${params.flags.join(" ")}` : "";
+  herdrOps.execSync(
+    `${wtBin} merge${targetArg} -C "${params.worktreePath}" --no-remove${extraFlags} -y`,
+    { cwd: params.worktreePath, encoding: "utf8" }
+  );
+  removeHerdrWorktree({
+    cwd: params.cwd,
+    branch: params.branch,
+    workspaceId: params.workspaceId,
+  });
 }
 

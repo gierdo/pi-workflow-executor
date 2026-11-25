@@ -5,9 +5,29 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as runner from "./runner/index.ts";
 import { resolveWorkflow, listWorkflows } from "./resolver.ts";
 import { slugify, parseWorkflowInvocation } from "./slug.ts";
-import { isHerdrActive, notifyHerdr, withHerdrBlocked, createHerdrWorktree, removeHerdrWorktree } from "./herdr.ts";
+import {
+  isHerdrActive,
+  notifyHerdr,
+  withHerdrBlocked,
+  getWorktrunkBin,
+  isWorktrunkAvailable,
+  createHerdrWorktree,
+  mergeHerdrWorktree,
+  removeHerdrWorktree,
+} from "./herdr.ts";
 
-export { slugify, parseWorkflowInvocation, isHerdrActive, notifyHerdr, withHerdrBlocked, createHerdrWorktree, removeHerdrWorktree };
+export {
+  slugify,
+  parseWorkflowInvocation,
+  isHerdrActive,
+  notifyHerdr,
+  withHerdrBlocked,
+  getWorktrunkBin,
+  isWorktrunkAvailable,
+  createHerdrWorktree,
+  mergeHerdrWorktree,
+  removeHerdrWorktree,
+};
 
 const require = createRequire(import.meta.url);
 const homeDir = process.env.HOME || "";

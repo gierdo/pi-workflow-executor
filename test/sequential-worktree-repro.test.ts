@@ -52,23 +52,31 @@ test("reproduction: orchestrator prompt directs sequential tasks to execute in t
 
 test("sequential vs parallel batch execution pattern: only parallel tasks allocate worktrees", () => {
   const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
   const origExecSync = herdrOps.execSync;
   const executedCommands: string[] = [];
 
   try {
     process.env.HERDR_ENV = "1";
+    delete process.env.WORKTRUNK_BIN;
 
     herdrOps.execSync = ((cmd: string) => {
       executedCommands.push(cmd);
-      if (cmd.startsWith("herdr worktree create")) {
-        const branchMatch = cmd.match(/--branch "([^"]+)"/);
-        const labelMatch = cmd.match(/--label "([^"]+)"/);
+      if (cmd.startsWith("wt switch --create")) {
+        const branchMatch = cmd.match(/--create "([^"]+)"/);
         const branch = branchMatch ? branchMatch[1] : "unknown";
+        return JSON.stringify({
+          action: "created",
+          branch,
+          path: `/tmp/worktrees/${branch}`,
+        });
+      }
+      if (cmd.startsWith("herdr worktree open")) {
+        const labelMatch = cmd.match(/--label "([^"]+)"/);
         const label = labelMatch ? labelMatch[1] : "unknown";
         return JSON.stringify({
           result: {
-            worktree: { path: `/tmp/worktrees/${branch}` },
-            workspace: { id: `ws_${label}` },
+            workspace: { workspace_id: `ws_${label}` },
           },
         });
       }
@@ -107,12 +115,13 @@ test("sequential vs parallel batch execution pattern: only parallel tasks alloca
 
     // 2. Stage 2: parallel tasks 2, 3, 4 require worktrees
     const parallelTasks = ["task-2", "task-3", "task-4"];
-    const createdWts: Array<{ worktreePath: string; workspaceId?: string }> = [];
+    const createdWts: Array<{ worktreePath: string; workspaceId?: string; branch: string }> = [];
 
     for (const slug of parallelTasks) {
       const wt = createHerdrWorktree({
         cwd: "/workspace",
-        branch: `${baseBranch}/${slug}`,
+        branch: `${baseBranch}-${slug}`,
+        baseBranch,
         label: slug,
       });
       createdWts.push(wt);
@@ -120,7 +129,7 @@ test("sequential vs parallel batch execution pattern: only parallel tasks alloca
         taskSlug: slug,
         childRunId: `task-impl-${slug}`,
         worktree: wt.worktreePath,
-        branch: `${baseBranch}/${slug}`,
+        branch: `${baseBranch}-${slug}`,
       });
     }
 
@@ -136,7 +145,11 @@ test("sequential vs parallel batch execution pattern: only parallel tasks alloca
 
     // Worktree cleanup for parallel stage
     for (const wt of createdWts) {
-      if (wt.workspaceId) removeHerdrWorktree(wt.workspaceId);
+      removeHerdrWorktree({
+        cwd: "/workspace",
+        branch: wt.branch,
+        workspaceId: wt.workspaceId,
+      });
     }
 
     // 3. Stage 3: task-5 runs sequentially in main worktree
@@ -151,16 +164,25 @@ test("sequential vs parallel batch execution pattern: only parallel tasks alloca
     completeInvocationByTask(db, "parent-plan-mixed", "task-5", "completed");
 
     // Assert that worktree commands were only executed for the 3 parallel tasks
-    const createCommands = executedCommands.filter((c) => c.startsWith("herdr worktree create"));
-    const removeCommands = executedCommands.filter((c) => c.startsWith("herdr worktree remove"));
+    const wtCreates = executedCommands.filter((c) => c.startsWith("wt switch --create"));
+    const herdrOpens = executedCommands.filter((c) => c.startsWith("herdr worktree open"));
+    const wtRemoves = executedCommands.filter((c) => c.startsWith("wt remove --foreground"));
+    const herdrCloses = executedCommands.filter((c) => c.startsWith("herdr workspace close"));
 
-    assert.equal(createCommands.length, 3, "Only parallel tasks 2, 3, 4 should create worktrees");
-    assert.equal(removeCommands.length, 3, "Only parallel tasks 2, 3, 4 should remove worktrees");
+    assert.equal(wtCreates.length, 3, "Only parallel tasks 2, 3, 4 should create worktrees via wt switch");
+    assert.equal(herdrOpens.length, 3, "Only parallel tasks 2, 3, 4 should open worktrees in Herdr");
+    assert.equal(wtRemoves.length, 3, "Only parallel tasks 2, 3, 4 should remove worktrees via wt remove");
+    assert.equal(herdrCloses.length, 3, "Only parallel tasks 2, 3, 4 should close workspaces in Herdr");
 
     db.close();
     rmSync(tempDir, { recursive: true, force: true });
   } finally {
     herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
     if (origEnv !== undefined) {
       process.env.HERDR_ENV = origEnv;
     } else {

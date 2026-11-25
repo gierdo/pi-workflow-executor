@@ -10,7 +10,13 @@ import {
   getInvocationByTask,
   completeInvocationByTask,
 } from "../runner/invocations.ts";
-import { isHerdrActive, createHerdrWorktree, removeHerdrWorktree, herdrOps } from "../herdr.ts";
+import {
+  isHerdrActive,
+  createHerdrWorktree,
+  mergeHerdrWorktree,
+  removeHerdrWorktree,
+  herdrOps,
+} from "../herdr.ts";
 import { loadYamlParser, resolveWorkflowsDir, createMockPi } from "./helpers.ts";
 import workflowExtension from "../index.ts";
 import { readFileSync } from "node:fs";
@@ -125,10 +131,13 @@ test("Parallel task invocations query and completion lifecycle (ISC 2, 3)", () =
 
 test("Herdr worktree provisioning and isolation gating (ISC 4, 5, 7, 8, 10)", () => {
   const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
   const origExecSync = herdrOps.execSync;
   const executedCommands: string[] = [];
 
   try {
+    delete process.env.WORKTRUNK_BIN;
+
     // 1. Outside Herdr: HERDR_ENV is not set
     delete process.env.HERDR_ENV;
     assert.equal(isHerdrActive(), false);
@@ -136,7 +145,7 @@ test("Herdr worktree provisioning and isolation gating (ISC 4, 5, 7, 8, 10)", ()
       () => {
         createHerdrWorktree({
           cwd: "/workspace",
-          branch: "feat/foo/t1",
+          branch: "feat/foo-t1",
           label: "t1",
         });
       },
@@ -149,15 +158,21 @@ test("Herdr worktree provisioning and isolation gating (ISC 4, 5, 7, 8, 10)", ()
 
     herdrOps.execSync = ((cmd: string) => {
       executedCommands.push(cmd);
-      if (cmd.startsWith("herdr worktree create")) {
-        const branchMatch = cmd.match(/--branch "([^"]+)"/);
-        const labelMatch = cmd.match(/--label "([^"]+)"/);
+      if (cmd.startsWith("wt switch --create")) {
+        const branchMatch = cmd.match(/--create "([^"]+)"/);
         const branch = branchMatch ? branchMatch[1] : "unknown";
+        return JSON.stringify({
+          action: "created",
+          branch,
+          path: `/tmp/worktrees/${branch}`,
+        });
+      }
+      if (cmd.startsWith("herdr worktree open")) {
+        const labelMatch = cmd.match(/--label "([^"]+)"/);
         const label = labelMatch ? labelMatch[1] : "unknown";
         return JSON.stringify({
           result: {
-            worktree: { path: `/tmp/worktrees/${branch}` },
-            workspace: { id: `ws_${label}` },
+            workspace: { workspace_id: `ws_${label}` },
           },
         });
       }
@@ -166,39 +181,79 @@ test("Herdr worktree provisioning and isolation gating (ISC 4, 5, 7, 8, 10)", ()
 
     const baseBranch = "feat/parallel-subagents";
     const taskSlugs = ["task-1", "task-2"];
-    const created: Array<{ worktreePath: string; workspaceId?: string }> = [];
+    const created: Array<{ worktreePath: string; workspaceId?: string; branch: string }> = [];
 
     // Serially provision worktrees
     for (const slug of taskSlugs) {
       const wt = createHerdrWorktree({
         cwd: "/workspace",
-        branch: `${baseBranch}/${slug}`,
+        branch: `${baseBranch}-${slug}`,
+        baseBranch,
         label: slug,
       });
       created.push(wt);
     }
 
     assert.equal(created.length, 2);
-    assert.equal(created[0].worktreePath, `/tmp/worktrees/${baseBranch}/task-1`);
+    assert.equal(created[0].worktreePath, `/tmp/worktrees/${baseBranch}-task-1`);
     assert.equal(created[0].workspaceId, "ws_task-1");
-    assert.equal(created[1].worktreePath, `/tmp/worktrees/${baseBranch}/task-2`);
+    assert.equal(created[1].worktreePath, `/tmp/worktrees/${baseBranch}-task-2`);
     assert.equal(created[1].workspaceId, "ws_task-2");
 
     // Worktrees remain intact during task implementation/review.
-    // At integration barrier after successful checks, cleanup is triggered:
+    // At integration barrier after successful checks, merge + cleanup is triggered:
     for (const wt of created) {
-      if (wt.workspaceId) {
-        removeHerdrWorktree(wt.workspaceId);
-      }
+      mergeHerdrWorktree({
+        cwd: "/workspace",
+        worktreePath: wt.worktreePath,
+        branch: wt.branch,
+        targetBranch: baseBranch,
+        workspaceId: wt.workspaceId,
+      });
     }
 
-    assert.equal(executedCommands.length, 4);
-    assert.ok(executedCommands[0].includes('herdr worktree create --cwd "/workspace" --branch "feat/parallel-subagents/task-1" --label "task-1" --no-focus'));
-    assert.ok(executedCommands[1].includes('herdr worktree create --cwd "/workspace" --branch "feat/parallel-subagents/task-2" --label "task-2" --no-focus'));
-    assert.equal(executedCommands[2], 'herdr worktree remove --workspace "ws_task-1" --force');
-    assert.equal(executedCommands[3], 'herdr worktree remove --workspace "ws_task-2" --force');
+    assert.equal(executedCommands.length, 10);
+    assert.equal(
+      executedCommands[0],
+      'wt switch --create "feat/parallel-subagents-task-1" --base "feat/parallel-subagents" --no-cd --format=json -y'
+    );
+    assert.equal(
+      executedCommands[1],
+      'herdr worktree open --cwd "/workspace" --path "/tmp/worktrees/feat/parallel-subagents-task-1" --label "task-1" --no-focus --json'
+    );
+    assert.equal(
+      executedCommands[2],
+      'wt switch --create "feat/parallel-subagents-task-2" --base "feat/parallel-subagents" --no-cd --format=json -y'
+    );
+    assert.equal(
+      executedCommands[3],
+      'herdr worktree open --cwd "/workspace" --path "/tmp/worktrees/feat/parallel-subagents-task-2" --label "task-2" --no-focus --json'
+    );
+    assert.equal(
+      executedCommands[4],
+      'wt merge "feat/parallel-subagents" -C "/tmp/worktrees/feat/parallel-subagents-task-1" --no-remove -y'
+    );
+    assert.equal(
+      executedCommands[5],
+      'wt remove --foreground -C "/workspace" "feat/parallel-subagents-task-1" -y'
+    );
+    assert.equal(executedCommands[6], 'herdr workspace close "ws_task-1"');
+    assert.equal(
+      executedCommands[7],
+      'wt merge "feat/parallel-subagents" -C "/tmp/worktrees/feat/parallel-subagents-task-2" --no-remove -y'
+    );
+    assert.equal(
+      executedCommands[8],
+      'wt remove --foreground -C "/workspace" "feat/parallel-subagents-task-2" -y'
+    );
+    assert.equal(executedCommands[9], 'herdr workspace close "ws_task-2"');
   } finally {
     herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
     if (origEnv !== undefined) {
       process.env.HERDR_ENV = origEnv;
     } else {
@@ -231,6 +286,7 @@ test("Workflow definitions reflect in-worktree review and concurrency attributes
 
 test("Sequential steps vs parallel batches: only concurrent tasks allocate worktrees", async () => {
   const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
   const origExecSync = herdrOps.execSync;
   const executedCommands: string[] = [];
   const originalCwd = process.cwd();
@@ -238,18 +294,25 @@ test("Sequential steps vs parallel batches: only concurrent tasks allocate workt
 
   try {
     process.env.HERDR_ENV = "1";
+    delete process.env.WORKTRUNK_BIN;
 
     herdrOps.execSync = ((cmd: string) => {
       executedCommands.push(cmd);
-      if (cmd.startsWith("herdr worktree create")) {
-        const branchMatch = cmd.match(/--branch "([^"]+)"/);
-        const labelMatch = cmd.match(/--label "([^"]+)"/);
+      if (cmd.startsWith("wt switch --create")) {
+        const branchMatch = cmd.match(/--create "([^"]+)"/);
         const branch = branchMatch ? branchMatch[1] : "unknown";
+        return JSON.stringify({
+          action: "created",
+          branch,
+          path: `/tmp/worktrees/${branch}`,
+        });
+      }
+      if (cmd.startsWith("herdr worktree open")) {
+        const labelMatch = cmd.match(/--label "([^"]+)"/);
         const label = labelMatch ? labelMatch[1] : "unknown";
         return JSON.stringify({
           result: {
-            worktree: { path: `/tmp/worktrees/${branch}` },
-            workspace: { id: `ws_${label}` },
+            workspace: { workspace_id: `ws_${label}` },
           },
         });
       }
@@ -299,12 +362,13 @@ test("Sequential steps vs parallel batches: only concurrent tasks allocate workt
 
     // Stage 2: tasks 2, 3, 4 parallel batch in worktrees
     const parallelTasks = ["task-2", "task-3", "task-4"];
-    const createdWts: Array<{ worktreePath: string; workspaceId?: string }> = [];
+    const createdWts: Array<{ worktreePath: string; workspaceId?: string; branch: string }> = [];
 
     for (const slug of parallelTasks) {
       const wt = createHerdrWorktree({
         cwd: tempDir,
-        branch: `${baseBranch}/${slug}`,
+        branch: `${baseBranch}-${slug}`,
+        baseBranch,
         label: slug,
       });
       createdWts.push(wt);
@@ -312,7 +376,7 @@ test("Sequential steps vs parallel batches: only concurrent tasks allocate workt
         taskSlug: slug,
         childRunId: `task-impl-${slug}`,
         worktree: wt.worktreePath,
-        branch: `${baseBranch}/${slug}`,
+        branch: `${baseBranch}-${slug}`,
       });
     }
 
@@ -327,7 +391,11 @@ test("Sequential steps vs parallel batches: only concurrent tasks allocate workt
     }
 
     for (const wt of createdWts) {
-      if (wt.workspaceId) removeHerdrWorktree(wt.workspaceId);
+      removeHerdrWorktree({
+        cwd: tempDir,
+        branch: wt.branch,
+        workspaceId: wt.workspaceId,
+      });
     }
 
     // Stage 3: task 5 sequential in main worktree
@@ -340,17 +408,26 @@ test("Sequential steps vs parallel batches: only concurrent tasks allocate workt
     assert.equal(stage3Active[0].worktree, null);
     completeInvocationByTask(db, "parent-mixed-run", "task-5", "completed");
 
-    const creates = executedCommands.filter((c) => c.startsWith("herdr worktree create"));
-    const removes = executedCommands.filter((c) => c.startsWith("herdr worktree remove"));
+    const wtCreates = executedCommands.filter((c) => c.startsWith("wt switch --create"));
+    const herdrOpens = executedCommands.filter((c) => c.startsWith("herdr worktree open"));
+    const wtRemoves = executedCommands.filter((c) => c.startsWith("wt remove --foreground"));
+    const herdrCloses = executedCommands.filter((c) => c.startsWith("herdr workspace close"));
 
-    assert.equal(creates.length, 3, "Only parallel tasks 2, 3, 4 should create worktrees");
-    assert.equal(removes.length, 3, "Only parallel tasks 2, 3, 4 should remove worktrees");
+    assert.equal(wtCreates.length, 3, "Only parallel tasks 2, 3, 4 should create worktrees via wt switch");
+    assert.equal(herdrOpens.length, 3, "Only parallel tasks 2, 3, 4 should open worktrees in Herdr");
+    assert.equal(wtRemoves.length, 3, "Only parallel tasks 2, 3, 4 should remove worktrees via wt remove");
+    assert.equal(herdrCloses.length, 3, "Only parallel tasks 2, 3, 4 should close workspaces in Herdr");
 
     db.close();
   } finally {
     process.chdir(originalCwd);
     rmSync(tempDir, { recursive: true, force: true });
     herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
     if (origEnv !== undefined) {
       process.env.HERDR_ENV = origEnv;
     } else {

@@ -1,7 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { isHerdrActive, notifyHerdr, withHerdrBlocked, createHerdrWorktree, removeHerdrWorktree, herdrOps } from "../herdr.ts";
+import {
+  isHerdrActive,
+  notifyHerdr,
+  withHerdrBlocked,
+  getWorktrunkBin,
+  isWorktrunkAvailable,
+  createHerdrWorktree,
+  mergeHerdrWorktree,
+  removeHerdrWorktree,
+  herdrOps,
+} from "../herdr.ts";
 
 test("isHerdrActive returns true only when HERDR_ENV is '1'", () => {
   const origEnv = process.env.HERDR_ENV;
@@ -238,6 +248,52 @@ test("withHerdrBlocked triggers notifyHerdr when notification is provided", asyn
   }
 });
 
+test("getWorktrunkBin returns default 'wt' or WORKTRUNK_BIN override", () => {
+  const origBin = process.env.WORKTRUNK_BIN;
+  try {
+    delete process.env.WORKTRUNK_BIN;
+    assert.equal(getWorktrunkBin(), "wt");
+
+    process.env.WORKTRUNK_BIN = "/custom/bin/wt-cli";
+    assert.equal(getWorktrunkBin(), "/custom/bin/wt-cli");
+  } finally {
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
+  }
+});
+
+test("isWorktrunkAvailable returns true on zero exit and false when execSync throws", () => {
+  const origBin = process.env.WORKTRUNK_BIN;
+  const origExecSync = herdrOps.execSync;
+  const executed: string[] = [];
+
+  try {
+    delete process.env.WORKTRUNK_BIN;
+
+    herdrOps.execSync = ((cmd: string) => {
+      executed.push(cmd);
+      return "wt 0.1.0";
+    }) as any;
+    assert.equal(isWorktrunkAvailable(), true);
+    assert.deepEqual(executed, ["wt --version"]);
+
+    herdrOps.execSync = (() => {
+      throw new Error("command not found: wt");
+    }) as any;
+    assert.equal(isWorktrunkAvailable(), false);
+  } finally {
+    herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
+  }
+});
+
 test("createHerdrWorktree throws when HERDR_ENV is not '1'", () => {
   const origEnv = process.env.HERDR_ENV;
   delete process.env.HERDR_ENV;
@@ -247,7 +303,7 @@ test("createHerdrWorktree throws when HERDR_ENV is not '1'", () => {
       () => {
         createHerdrWorktree({
           cwd: "/path/to/repo",
-          branch: "feat/foo/task-1",
+          branch: "feat/foo-task-1",
           label: "task-1",
         });
       },
@@ -262,38 +318,55 @@ test("createHerdrWorktree throws when HERDR_ENV is not '1'", () => {
   }
 });
 
-test("createHerdrWorktree executes CLI command and parses output when HERDR_ENV is '1'", () => {
+test("createHerdrWorktree executes wt switch and herdr worktree open without baseBranch and parses workspace_id", () => {
   const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
   process.env.HERDR_ENV = "1";
+  delete process.env.WORKTRUNK_BIN;
 
   const origExecSync = herdrOps.execSync;
-  let executedCmd = "";
+  const executedCmds: string[] = [];
 
   try {
-    herdrOps.execSync = ((cmd: string, options: any) => {
-      executedCmd = cmd;
-      return JSON.stringify({
-        result: {
-          worktree: { path: "/tmp/worktrees/feat/foo/task-1" },
-          workspace: { id: "ws_12345" },
-        },
-      });
+    herdrOps.execSync = ((cmd: string) => {
+      executedCmds.push(cmd);
+      if (cmd.startsWith("wt switch")) {
+        return JSON.stringify({
+          action: "created",
+          branch: "feat/foo-task-1",
+          path: "/tmp/worktrees/feat-foo-task-1",
+        });
+      }
+      if (cmd.startsWith("herdr worktree open")) {
+        return JSON.stringify({
+          result: {
+            workspace: { workspace_id: "ws_12345" },
+          },
+        });
+      }
+      return "{}";
     }) as any;
 
     const res = createHerdrWorktree({
       cwd: "/path/to/repo",
-      branch: "feat/foo/task-1",
+      branch: "feat/foo-task-1",
       label: "task-1",
     });
 
-    assert.equal(
-      executedCmd,
-      'herdr worktree create --cwd "/path/to/repo" --branch "feat/foo/task-1" --label "task-1" --no-focus'
-    );
-    assert.equal(res.worktreePath, "/tmp/worktrees/feat/foo/task-1");
+    assert.deepEqual(executedCmds, [
+      'wt switch --create "feat/foo-task-1" --no-cd --format=json -y',
+      'herdr worktree open --cwd "/path/to/repo" --path "/tmp/worktrees/feat-foo-task-1" --label "task-1" --no-focus --json',
+    ]);
+    assert.equal(res.worktreePath, "/tmp/worktrees/feat-foo-task-1");
     assert.equal(res.workspaceId, "ws_12345");
+    assert.equal(res.branch, "feat/foo-task-1");
   } finally {
     herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
     if (origEnv !== undefined) {
       process.env.HERDR_ENV = origEnv;
     } else {
@@ -302,23 +375,167 @@ test("createHerdrWorktree executes CLI command and parses output when HERDR_ENV 
   }
 });
 
-test("removeHerdrWorktree executes remove command when HERDR_ENV is '1'", () => {
+test("createHerdrWorktree supports baseBranch and parses workspace.id fallback", () => {
   const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
   process.env.HERDR_ENV = "1";
+  delete process.env.WORKTRUNK_BIN;
 
   const origExecSync = herdrOps.execSync;
-  let executedCmd = "";
+  const executedCmds: string[] = [];
 
   try {
     herdrOps.execSync = ((cmd: string) => {
-      executedCmd = cmd;
+      executedCmds.push(cmd);
+      if (cmd.startsWith("wt switch")) {
+        return JSON.stringify({
+          result: { path: "/tmp/worktrees/feat-foo-task-2" },
+          branch: "feat/foo-task-2",
+        });
+      }
+      if (cmd.startsWith("herdr worktree open")) {
+        return JSON.stringify({
+          workspace: { id: "ws_fallback_id" },
+        });
+      }
+      return "{}";
+    }) as any;
+
+    const res = createHerdrWorktree({
+      cwd: "/path/to/repo",
+      branch: "feat/foo-task-2",
+      label: "task-2",
+      baseBranch: "feat/foo",
+    });
+
+    assert.deepEqual(executedCmds, [
+      'wt switch --create "feat/foo-task-2" --base "feat/foo" --no-cd --format=json -y',
+      'herdr worktree open --cwd "/path/to/repo" --path "/tmp/worktrees/feat-foo-task-2" --label "task-2" --no-focus --json',
+    ]);
+    assert.equal(res.worktreePath, "/tmp/worktrees/feat-foo-task-2");
+    assert.equal(res.workspaceId, "ws_fallback_id");
+    assert.equal(res.branch, "feat/foo-task-2");
+  } finally {
+    herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+
+test("mergeHerdrWorktree throws when HERDR_ENV is not '1'", () => {
+  const origEnv = process.env.HERDR_ENV;
+  delete process.env.HERDR_ENV;
+
+  try {
+    assert.throws(
+      () => {
+        mergeHerdrWorktree({
+          cwd: "/path/to/repo",
+          worktreePath: "/tmp/worktrees/feat-foo-task-1",
+          branch: "feat/foo-task-1",
+          targetBranch: "feat/foo",
+          workspaceId: "ws_12345",
+        });
+      },
+      { message: "Cannot merge Herdr worktree outside a Herdr environment (HERDR_ENV!=1)" }
+    );
+  } finally {
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+
+test("mergeHerdrWorktree runs wt merge --no-remove, wt remove --foreground, and herdr workspace close", () => {
+  const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
+  process.env.HERDR_ENV = "1";
+  delete process.env.WORKTRUNK_BIN;
+
+  const origExecSync = herdrOps.execSync;
+  const executedCmds: string[] = [];
+
+  try {
+    herdrOps.execSync = ((cmd: string) => {
+      executedCmds.push(cmd);
       return "";
     }) as any;
 
-    removeHerdrWorktree("ws_12345");
-    assert.equal(executedCmd, 'herdr worktree remove --workspace "ws_12345" --force');
+    mergeHerdrWorktree({
+      cwd: "/path/to/repo",
+      worktreePath: "/tmp/worktrees/feat-foo-task-1",
+      branch: "feat/foo-task-1",
+      targetBranch: "feat/foo",
+      workspaceId: "ws_12345",
+      flags: ["--no-squash"],
+    });
+
+    assert.deepEqual(executedCmds, [
+      'wt merge "feat/foo" -C "/tmp/worktrees/feat-foo-task-1" --no-remove --no-squash -y',
+      'wt remove --foreground -C "/path/to/repo" "feat/foo-task-1" -y',
+      'herdr workspace close "ws_12345"',
+    ]);
   } finally {
     herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+
+test("removeHerdrWorktree supports object params (wt remove + herdr workspace close) and string workspaceId", () => {
+  const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
+  process.env.HERDR_ENV = "1";
+  delete process.env.WORKTRUNK_BIN;
+
+  const origExecSync = herdrOps.execSync;
+  const executedCmds: string[] = [];
+
+  try {
+    herdrOps.execSync = ((cmd: string) => {
+      executedCmds.push(cmd);
+      return "";
+    }) as any;
+
+    removeHerdrWorktree({
+      cwd: "/path/to/repo",
+      branch: "feat/foo-task-1",
+      workspaceId: "ws_12345",
+      force: true,
+    });
+
+    removeHerdrWorktree("ws_only");
+
+    assert.deepEqual(executedCmds, [
+      'wt remove --foreground -C "/path/to/repo" "feat/foo-task-1" --force -D -y',
+      'herdr workspace close "ws_12345"',
+      'herdr workspace close "ws_only"',
+    ]);
+  } finally {
+    herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
     if (origEnv !== undefined) {
       process.env.HERDR_ENV = origEnv;
     } else {
@@ -341,6 +558,7 @@ test("removeHerdrWorktree is a no-op when HERDR_ENV is not '1'", () => {
     }) as any;
 
     removeHerdrWorktree("ws_12345");
+    removeHerdrWorktree({ cwd: "/path/to/repo", branch: "feat/foo-task-1", workspaceId: "ws_12345" });
     assert.equal(called, false);
   } finally {
     herdrOps.execSync = origExecSync;

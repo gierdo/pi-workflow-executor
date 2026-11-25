@@ -69,16 +69,49 @@ export function getWorktrunkBin(): string {
   return process.env.WORKTRUNK_BIN || "wt";
 }
 
+function escapeDoubleQuoted(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function formatDoubleQuotedArg(value: string): string {
+  return `"${escapeDoubleQuoted(value)}"`;
+}
+
+function formatWorktrunkBin(bin: string = getWorktrunkBin()): string {
+  return /^[A-Za-z0-9_./:-]+$/.test(bin) ? bin : formatDoubleQuotedArg(bin);
+}
+
 /**
  * Checks whether the Worktrunk (`wt`) CLI is available in the current environment.
  */
 export function isWorktrunkAvailable(): boolean {
   try {
-    herdrOps.execSync(`${getWorktrunkBin()} --version`, { stdio: "ignore" });
+    herdrOps.execSync(`${formatWorktrunkBin()} --version`, { stdio: "ignore" });
     return true;
   } catch {
     return false;
   }
+}
+
+function extractWorktrunkPathFromList(rawJson: string, branch: string): string {
+  const parsed = JSON.parse(rawJson);
+  const items: any[] = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.items)
+      ? parsed.items
+      : [];
+  for (const item of items) {
+    if (!item || item.branch !== branch) continue;
+    const isWorktree =
+      item.kind === "worktree" ||
+      (item.worktree !== null && typeof item.worktree === "object");
+    if (!isWorktree) continue;
+    const candidate = item.worktree?.path ?? item.path;
+    if (typeof candidate === "string" && candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return "";
 }
 
 /**
@@ -94,18 +127,30 @@ export function createHerdrWorktree(params: {
   if (!isHerdrActive()) {
     throw new Error("Cannot create Herdr worktree outside a Herdr environment (HERDR_ENV!=1)");
   }
-  const wtBin = getWorktrunkBin();
-  const baseArg = params.baseBranch ? ` --base "${params.baseBranch}"` : "";
+  const wtBinCmd = formatWorktrunkBin();
+  const baseArg = params.baseBranch ? ` --base ${formatDoubleQuotedArg(params.baseBranch)}` : "";
   const wtOut = herdrOps.execSync(
-    `${wtBin} switch --create "${params.branch}"${baseArg} --no-cd --format=json -y`,
+    `${wtBinCmd} switch --create ${formatDoubleQuotedArg(params.branch)}${baseArg} --no-cd --format=json -y`,
     { cwd: params.cwd, encoding: "utf8" }
   );
   const wtParsed = JSON.parse(wtOut.toString());
-  const worktreePath: string = wtParsed.path ?? wtParsed.result?.path ?? "";
   const resolvedBranch: string = wtParsed.branch ?? params.branch;
+  let worktreePath: string = wtParsed.path ?? wtParsed.result?.path ?? "";
+
+  if (!worktreePath) {
+    const listOut = herdrOps.execSync(`${wtBinCmd} list --format=json`, {
+      cwd: params.cwd,
+      encoding: "utf8",
+    });
+    worktreePath = extractWorktrunkPathFromList(listOut.toString(), resolvedBranch);
+  }
+
+  if (!worktreePath) {
+    throw new Error(`Worktrunk returned no worktree path for branch "${resolvedBranch}"`);
+  }
 
   const herdrOut = herdrOps.execSync(
-    `herdr worktree open --cwd "${params.cwd}" --path "${worktreePath}" --label "${params.label}" --no-focus --json`,
+    `herdr worktree open --cwd ${formatDoubleQuotedArg(params.cwd)} --path ${formatDoubleQuotedArg(worktreePath)} --label ${formatDoubleQuotedArg(params.label)} --no-focus --json`,
     { cwd: params.cwd, encoding: "utf8" }
   );
   const herdrParsed = JSON.parse(herdrOut.toString());
@@ -136,17 +181,19 @@ export function removeHerdrWorktree(target: string | RemoveHerdrWorktreeParams):
     typeof target === "string" ? { workspaceId: target } : target;
 
   if (params.branch) {
-    const wtBin = getWorktrunkBin();
-    const cwdArg = params.cwd ? ` -C "${params.cwd}"` : "";
+    const wtBinCmd = formatWorktrunkBin();
+    const cwdArg = params.cwd ? ` -C ${formatDoubleQuotedArg(params.cwd)}` : "";
     const forceArg = params.force ? " --force -D" : "";
     herdrOps.execSync(
-      `${wtBin} remove --foreground${cwdArg} "${params.branch}"${forceArg} -y`,
+      `${wtBinCmd} remove --foreground${cwdArg} ${formatDoubleQuotedArg(params.branch)}${forceArg} -y`,
       { ...(params.cwd ? { cwd: params.cwd } : {}), stdio: "ignore" }
     );
   }
 
   if (params.workspaceId) {
-    herdrOps.execSync(`herdr workspace close "${params.workspaceId}"`, { stdio: "ignore" });
+    herdrOps.execSync(`herdr workspace close ${formatDoubleQuotedArg(params.workspaceId)}`, {
+      stdio: "ignore",
+    });
   }
 }
 
@@ -167,11 +214,11 @@ export function mergeHerdrWorktree(params: MergeHerdrWorktreeParams): void {
   if (!isHerdrActive()) {
     throw new Error("Cannot merge Herdr worktree outside a Herdr environment (HERDR_ENV!=1)");
   }
-  const wtBin = getWorktrunkBin();
-  const targetArg = params.targetBranch ? ` "${params.targetBranch}"` : "";
+  const wtBinCmd = formatWorktrunkBin();
+  const targetArg = params.targetBranch ? ` ${formatDoubleQuotedArg(params.targetBranch)}` : "";
   const extraFlags = params.flags?.length ? ` ${params.flags.join(" ")}` : "";
   herdrOps.execSync(
-    `${wtBin} merge${targetArg} -C "${params.worktreePath}" --no-remove${extraFlags} -y`,
+    `${wtBinCmd} merge${targetArg} -C ${formatDoubleQuotedArg(params.worktreePath)} --no-remove${extraFlags} -y`,
     { cwd: params.worktreePath, encoding: "utf8" }
   );
   removeHerdrWorktree({

@@ -570,3 +570,164 @@ test("removeHerdrWorktree is a no-op when HERDR_ENV is not '1'", () => {
   }
 });
 
+test("createHerdrWorktree falls back to wt list --format=json (schema 2 and schema 1) and throws if path is still empty", () => {
+  const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
+  process.env.HERDR_ENV = "1";
+  delete process.env.WORKTRUNK_BIN;
+
+  const origExecSync = herdrOps.execSync;
+
+  try {
+    // 1. Schema 2 fallback ({ schema: 2, items: [{ branch, worktree: { path } }] })
+    const cmdsSchema2: string[] = [];
+    herdrOps.execSync = ((cmd: string) => {
+      cmdsSchema2.push(cmd);
+      if (cmd.startsWith("wt switch")) {
+        return JSON.stringify({ action: "switched", branch: "feat/foo-task-s2" });
+      }
+      if (cmd === "wt list --format=json") {
+        return JSON.stringify({
+          schema: 2,
+          items: [
+            { branch: "main", worktree: { path: "/path/to/repo", main: true } },
+            { branch: "feat/foo-task-s2", worktree: { path: "/tmp/worktrees/feat-foo-task-s2" } },
+          ],
+        });
+      }
+      if (cmd.startsWith("herdr worktree open")) {
+        return JSON.stringify({ result: { workspace: { workspace_id: "ws_s2" } } });
+      }
+      return "{}";
+    }) as any;
+
+    const resS2 = createHerdrWorktree({
+      cwd: "/path/to/repo",
+      branch: "feat/foo-task-s2",
+      label: "task-s2",
+    });
+
+    assert.deepEqual(cmdsSchema2, [
+      'wt switch --create "feat/foo-task-s2" --no-cd --format=json -y',
+      "wt list --format=json",
+      'herdr worktree open --cwd "/path/to/repo" --path "/tmp/worktrees/feat-foo-task-s2" --label "task-s2" --no-focus --json',
+    ]);
+    assert.equal(resS2.worktreePath, "/tmp/worktrees/feat-foo-task-s2");
+    assert.equal(resS2.workspaceId, "ws_s2");
+
+    // 2. Schema 1 fallback ([{ kind: "worktree", branch, path }])
+    const cmdsSchema1: string[] = [];
+    herdrOps.execSync = ((cmd: string) => {
+      cmdsSchema1.push(cmd);
+      if (cmd.startsWith("wt switch")) {
+        return JSON.stringify({ action: "switched" });
+      }
+      if (cmd === "wt list --format=json") {
+        return JSON.stringify([
+          { kind: "branch", branch: "feat/foo-task-s1" },
+          { kind: "worktree", branch: "feat/foo-task-s1", path: "/tmp/worktrees/feat-foo-task-s1" },
+        ]);
+      }
+      if (cmd.startsWith("herdr worktree open")) {
+        return JSON.stringify({ result: { workspace: { workspace_id: "ws_s1" } } });
+      }
+      return "{}";
+    }) as any;
+
+    const resS1 = createHerdrWorktree({
+      cwd: "/path/to/repo",
+      branch: "feat/foo-task-s1",
+      label: "task-s1",
+    });
+
+    assert.equal(resS1.worktreePath, "/tmp/worktrees/feat-foo-task-s1");
+    assert.equal(resS1.workspaceId, "ws_s1");
+
+    // 3. Throws when neither wt switch nor wt list yields a path
+    herdrOps.execSync = ((cmd: string) => {
+      if (cmd.startsWith("wt switch")) {
+        return JSON.stringify({ action: "switched" });
+      }
+      if (cmd === "wt list --format=json") {
+        return JSON.stringify({ schema: 2, items: [] });
+      }
+      throw new Error("herdr worktree open should not be called");
+    }) as any;
+
+    assert.throws(
+      () =>
+        createHerdrWorktree({
+          cwd: "/path/to/repo",
+          branch: "feat/missing",
+          label: "missing",
+        }),
+      { message: 'Worktrunk returned no worktree path for branch "feat/missing"' }
+    );
+  } finally {
+    herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+
+test("WORKTRUNK_BIN with spaces and double-quoted arguments are safely quoted", () => {
+  const origEnv = process.env.HERDR_ENV;
+  const origBin = process.env.WORKTRUNK_BIN;
+  process.env.HERDR_ENV = "1";
+  process.env.WORKTRUNK_BIN = "/opt/My Tools/wt";
+
+  const origExecSync = herdrOps.execSync;
+  const executedCmds: string[] = [];
+
+  try {
+    herdrOps.execSync = ((cmd: string) => {
+      executedCmds.push(cmd);
+      if (cmd.includes(" switch ")) {
+        return JSON.stringify({
+          path: "/tmp/worktrees/task-1",
+          branch: "feat/task-1",
+        });
+      }
+      if (cmd.startsWith("herdr worktree open")) {
+        return JSON.stringify({
+          result: { workspace: { workspace_id: "ws_spaced" } },
+        });
+      }
+      return "";
+    }) as any;
+
+    assert.equal(isWorktrunkAvailable(), true);
+    createHerdrWorktree({
+      cwd: "/path/to/my repo",
+      branch: "feat/task-1",
+      label: 'task "1"',
+    });
+
+    assert.deepEqual(executedCmds, [
+      '"/opt/My Tools/wt" --version',
+      '"/opt/My Tools/wt" switch --create "feat/task-1" --no-cd --format=json -y',
+      'herdr worktree open --cwd "/path/to/my repo" --path "/tmp/worktrees/task-1" --label "task \\"1\\"" --no-focus --json',
+    ]);
+  } finally {
+    herdrOps.execSync = origExecSync;
+    if (origBin !== undefined) {
+      process.env.WORKTRUNK_BIN = origBin;
+    } else {
+      delete process.env.WORKTRUNK_BIN;
+    }
+    if (origEnv !== undefined) {
+      process.env.HERDR_ENV = origEnv;
+    } else {
+      delete process.env.HERDR_ENV;
+    }
+  }
+});
+

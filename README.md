@@ -143,7 +143,7 @@ The selector displays existing runs and their statuses:
 
 ```text
 Select a workflow run to inspect or resume:
-- [ACTIVE] planning (oauth2-auth) - state: explore_approaches, rev: 5
+- [ACTIVE] planning (oauth2-auth) - state: design, rev: 5
 - [PAUSED] bug-fix (conn-pool-leak) - state: verify, rev: 3 - waiting for approval
 - [COMPLETED] feature-implementation (dark-mode) - state: done, rev: 7
 ```
